@@ -1,25 +1,24 @@
 import asyncio
 import sys
 import io
-import threading
-import queue
 import time
 import traceback
-import os
+import os 
 from datetime import datetime
 from typing import Dict, Any, List
 
 from astrbot.api.event import filter, AstrMessageEvent, MessageChain
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 import astrbot.api.message_components as Comp
 
-@register("code_executor", "Assistant", "超级代码执行器 - 全能小狐狸汐林", "1.7.0-config", "local")
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "1.7.0-fix")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
         self.config = config or {}
+        self.tools = StarTools()  # 获取框架工具
 
         # 优先从配置文件读取配置，否则使用默认值
         self.timeout_seconds = self.config.get("timeout_seconds", 90)
@@ -32,9 +31,9 @@ class CodeExecutorPlugin(Star):
             self.file_output_dir = configured_path
             logger.info(f"已从配置文件加载输出目录: {self.file_output_dir}")
         else:
-            # 如果配置为空，则使用默认的后备路径
-            default_base_path = "D:/Agent-xilin/AstrBot/data/plugins/astrobot_plugin_code_executor"
-            self.file_output_dir = os.path.join(default_base_path, 'outputs')
+            # 使用框架提供的标准方式获取数据目录
+            plugin_data_dir = self.tools.get_data_dir()
+            self.file_output_dir = os.path.join(plugin_data_dir, 'outputs')
             logger.info(f"配置中 output_directory 为空, 使用默认输出目录: {self.file_output_dir}")
 
         # 确保最终确定的目录存在
@@ -46,7 +45,8 @@ class CodeExecutorPlugin(Star):
                 logger.error(f"创建文件夹 {self.file_output_dir} 失败！错误: {e}")
 
         logger.info("代码执行器插件已加载！")
-
+        
+    @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.llm_tool(name="execute_python_code")
     async def execute_python_code(self, event: AstrMessageEvent, code: str, description: str = "") -> str:
         '''
@@ -56,12 +56,12 @@ class CodeExecutorPlugin(Star):
         ---
         **【调用场景】**
         **必须**在以下场景调用此函数，执行代码获取精确结果，禁止文字猜测：
-        1. **计算/数据处理**：如“计算 (1+5)*3/2”或“分析数据最大值”。
-        2. **文件操作**：生成/读取 Excel、PDF、CSV 、图片类型等，如“生成 Excel 表格”。
+        1. **计算/数据处理**：如"计算 (1+5)*3/2"或"分析数据最大值"。
+        2. **文件操作**：生成/读取 Excel、PDF、CSV 、图片类型等，如"生成 Excel 表格"。
         3. **网络请求**：请求各种api或者其他网络操作。
-        4. **数据可视化**：如“绘制销售趋势图”或“生成饼图”。
-        5. **图像处理**：如“下载猫的图片并调整大小”。
-        6. **复杂逻辑**：如“规划最短路径”或“模拟抽奖”。
+        4. **数据可视化**：如"绘制销售趋势图"或"生成饼图"。
+        5. **图像处理**：如"下载猫的图片并调整大小"。
+        6. **复杂逻辑**：如"规划最短路径"或"模拟抽奖"。
         7. **文件操作**: 允许AI生成符合格式的代码操作本机文件发送给用户，包括但不限于删除，查找，修改等。
         **优先级**：涉及计算、文件、可视化或动态数据时，**必须**优先调用此函数，而非 `fetch_url`。
 
@@ -74,6 +74,7 @@ class CodeExecutorPlugin(Star):
             - 示例: `plt.savefig(os.path.join(SAVE_DIR, 'sales_chart.png'))`
         2.  **发送本地已有文件 (高级)**:
             - 如果需要读取并发送一个**已经存在**的本地文件（例如 `D:\reports\report.docx`），请将其**完整路径**添加到 `FILES_TO_SEND` 列表中。
+            - **推荐优先使用此方式，它比目录检测更可靠。**
             - 示例:
               ```python
               # 发送 D 盘下的一个报告文件
@@ -165,7 +166,6 @@ class CodeExecutorPlugin(Star):
             return "插件内部错误，请检查配置或环境。"
 
     async def _execute_code_safely(self, code: str) -> Dict[str, Any]:
-
         def run_code(code_to_run: str, file_output_dir: str):
             old_stdout, old_stderr = sys.stdout, sys.stderr
             output_buffer, error_buffer = io.StringIO(), io.StringIO()
@@ -237,11 +237,21 @@ class CodeExecutorPlugin(Star):
                 
                 if 'plt' in exec_globals: plt.show, plt.savefig = original_show, original_savefig
 
-                files_after = set(os.listdir(file_output_dir)) if os.path.exists(file_output_dir) else set()
-                newly_generated_filenames = files_after - files_before
-                newly_generated_files = [os.path.join(file_output_dir, f) for f in newly_generated_filenames]
-                
-                all_files_to_send = list(set(newly_generated_files + files_to_send_explicitly))
+                # 优先使用 FILES_TO_SEND 列表，提高文件归属准确性
+                if files_to_send_explicitly:
+                    # 如果用户显式添加了文件到 FILES_TO_SEND，优先使用这些文件
+                    all_files_to_send = files_to_send_explicitly[:]
+                    # 同时检测新生成的文件作为补充
+                    files_after = set(os.listdir(file_output_dir)) if os.path.exists(file_output_dir) else set()
+                    newly_generated_filenames = files_after - files_before
+                    newly_generated_files = [os.path.join(file_output_dir, f) for f in newly_generated_filenames]
+                    # 去重合并
+                    all_files_to_send.extend([f for f in newly_generated_files if f not in all_files_to_send])
+                else:
+                    # 如果没有显式指定文件，则使用目录检测方式
+                    files_after = set(os.listdir(file_output_dir)) if os.path.exists(file_output_dir) else set()
+                    newly_generated_filenames = files_after - files_before
+                    all_files_to_send = [os.path.join(file_output_dir, f) for f in newly_generated_filenames]
 
                 return {
                     "success": True, "output": output_buffer.getvalue(), "error": None,
@@ -257,19 +267,15 @@ class CodeExecutorPlugin(Star):
                     if 'plt' in locals() and 'matplotlib' in sys.modules: plt.close('all')
                 except: pass
 
-        result_queue = queue.Queue()
-        thread = threading.Thread(
-            target=lambda q, c, f: q.put(run_code(c, f)),
-            args=(result_queue, code, self.file_output_dir)
-        )
-        thread.daemon = True
-        thread.start()
-
+        # 使用 asyncio.to_thread 替代 threading + queue，避免阻塞事件循环
         try:
-            return result_queue.get(timeout=self.timeout_seconds)
-        except queue.Empty:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(run_code, code, self.file_output_dir),
+                timeout=self.timeout_seconds
+            )
+            return result
+        except asyncio.TimeoutError:
             return {"success": False, "error": f"代码执行超时（超过 {self.timeout_seconds} 秒）", "output": None, "file_paths": []}
 
     async def terminate(self):
         logger.info("代码执行器插件已卸载")
-
