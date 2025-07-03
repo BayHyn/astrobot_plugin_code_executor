@@ -1,5 +1,5 @@
 name: "代码执行器"
 author: "Xican"
 description: "让LLM生成并执行Python代码来解决问题"
-version: "1.7.0-fix"
+version: "1.8.0--safe"
 repo: "local"

@@ -3,7 +3,7 @@ import sys
 import io
 import time
 import traceback
-import os 
+import os
 from datetime import datetime
 from typing import Dict, Any, List
 
@@ -12,8 +12,11 @@ from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 import astrbot.api.message_components as Comp
+from astrbot.api.provider import ProviderRequest
+from astrbot.core.message.components import Plain
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "1.7.0-fix")
+
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "1.8.0--safe")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -45,8 +48,8 @@ class CodeExecutorPlugin(Star):
                 logger.error(f"创建文件夹 {self.file_output_dir} 失败！错误: {e}")
 
         logger.info("代码执行器插件已加载！")
-        
-    @filter.permission_type(filter.PermissionType.ADMIN)
+
+
     @filter.llm_tool(name="execute_python_code")
     async def execute_python_code(self, event: AstrMessageEvent, code: str, description: str = "") -> str:
         '''
@@ -107,6 +110,10 @@ class CodeExecutorPlugin(Star):
             code(string): 可独立运行的 Python 代码。
             description(string): (可选) 代码功能描述。
         '''
+        logger.info(f"角色{event.role}")
+        if event.role != "admin":
+            await event.send(MessageChain().message("❌ 你没有权限使用此功能！"))
+            return "用户不是管理员，无权限运行代码，请告诉他不要使用此功能"
         logger.info(f"收到任务: {description or '无描述'}")
         logger.debug(f"代码内容:\n{code}")
 
@@ -123,18 +130,20 @@ class CodeExecutorPlugin(Star):
 
                 text_response = "\n".join(response_parts)
                 await event.send(MessageChain().message(text_response))
-                
+
                 # 发送文件
                 if result["file_paths"]:
                     logger.info(f"发现 {len(result['file_paths'])} 个待发送文件，正在处理...")
                     for file_path in result["file_paths"]:
                         if not os.path.exists(file_path) or not os.path.isfile(file_path):
                             logger.warning(f"文件不存在或是个目录，跳过发送: {file_path}")
-                            await event.send(MessageChain().message(f"🤔 警告: AI请求发送的文件不存在: {os.path.basename(file_path)}"))
+                            await event.send(MessageChain().message(
+                                f"🤔 警告: AI请求发送的文件不存在: {os.path.basename(file_path)}"))
                             continue
                         try:
                             file_name = os.path.basename(file_path)
-                            is_image = any(file_name.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])
+                            is_image = any(
+                                file_name.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])
                             if is_image:
                                 logger.info(f"正在以图片形式发送: {file_path}")
                                 await event.send(MessageChain().file_image(file_path))
@@ -148,7 +157,7 @@ class CodeExecutorPlugin(Star):
                             await event.send(MessageChain().message(f"❌ 发送文件 {os.path.basename(file_path)} 失败"))
 
                 if not (result["output"] and result["output"].strip()) and not result["file_paths"]:
-                     return "代码执行完成，但无文件、图片或文本输出。"
+                    return "代码执行完成，但无文件、图片或文本输出。"
                 return "任务完成！"
 
             else:
@@ -169,7 +178,7 @@ class CodeExecutorPlugin(Star):
         def run_code(code_to_run: str, file_output_dir: str):
             old_stdout, old_stderr = sys.stdout, sys.stderr
             output_buffer, error_buffer = io.StringIO(), io.StringIO()
-            
+
             files_to_send_explicitly = []
             files_before = set(os.listdir(file_output_dir)) if os.path.exists(file_output_dir) else set()
 
@@ -201,15 +210,18 @@ class CodeExecutorPlugin(Star):
                         try:
                             original_savefig(filepath, dpi=150, bbox_inches='tight')
                             print(f"[图表已保存: {filepath}]")
-                        except Exception as e: print(f"[保存图表失败: {e}]")
-                        finally: plt.close(fig)
+                        except Exception as e:
+                            print(f"[保存图表失败: {e}]")
+                        finally:
+                            plt.close(fig)
 
                     plt.show = lambda *args, **kwargs: save_and_close_current_fig("plot")
                     plt.savefig = lambda fname, *args, **kwargs: save_and_close_current_fig(
                         os.path.splitext(os.path.basename(fname))[0] if isinstance(fname, str) else "plot"
                     )
                     exec_globals.update({'matplotlib': matplotlib, 'plt': plt})
-                except ImportError: logger.warning("matplotlib 不可用，图表功能禁用")
+                except ImportError:
+                    logger.warning("matplotlib 不可用，图表功能禁用")
 
                 libs_to_inject = {
                     'numpy': 'np', 'pandas': 'pd', 'seaborn': 'sns', 'requests': 'requests',
@@ -222,19 +234,24 @@ class CodeExecutorPlugin(Star):
                     try:
                         lib = __import__(lib_name)
                         exec_globals[alias or lib_name] = lib
-                    except ImportError: logger.warning(f"库 {lib_name} 不可用，相关功能禁用")
-                try: from bs4 import BeautifulSoup; exec_globals['BeautifulSoup'] = BeautifulSoup
-                except ImportError: pass
-                try: from PIL import Image; exec_globals['Image'] = Image
-                except ImportError: pass
+                    except ImportError:
+                        logger.warning(f"库 {lib_name} 不可用，相关功能禁用")
+                try:
+                    from bs4 import BeautifulSoup; exec_globals['BeautifulSoup'] = BeautifulSoup
+                except ImportError:
+                    pass
+                try:
+                    from PIL import Image; exec_globals['Image'] = Image
+                except ImportError:
+                    pass
 
                 exec(code_to_run, exec_globals)
-                
+
                 if 'plt' in exec_globals and plt.get_fignums():
                     for fig_num in list(plt.get_fignums()):
                         plt.figure(fig_num)
                         save_and_close_current_fig("plot_auto")
-                
+
                 if 'plt' in exec_globals: plt.show, plt.savefig = original_show, original_savefig
 
                 # 优先使用 FILES_TO_SEND 列表，提高文件归属准确性
@@ -265,7 +282,8 @@ class CodeExecutorPlugin(Star):
                 sys.stdout, sys.stderr = old_stdout, old_stderr
                 try:
                     if 'plt' in locals() and 'matplotlib' in sys.modules: plt.close('all')
-                except: pass
+                except:
+                    pass
 
         # 使用 asyncio.to_thread 替代 threading + queue，避免阻塞事件循环
         try:
@@ -275,7 +293,8 @@ class CodeExecutorPlugin(Star):
             )
             return result
         except asyncio.TimeoutError:
-            return {"success": False, "error": f"代码执行超时（超过 {self.timeout_seconds} 秒）", "output": None, "file_paths": []}
+            return {"success": False, "error": f"代码执行超时（超过 {self.timeout_seconds} 秒）", "output": None,
+                    "file_paths": []}
 
     async def terminate(self):
         logger.info("代码执行器插件已卸载")
