@@ -15,18 +15,29 @@ from astrbot.api import logger
 from astrbot.api import AstrBotConfig
 import astrbot.api.message_components as Comp
 
-@register("code_executor", "Assistant", "超级代码执行器 - 全能小狐狸汐林", "1.6.1-final", "local")
+@register("code_executor", "Assistant", "超级代码执行器 - 全能小狐狸汐林", "1.7.0-config", "local")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
         self.config = config or {}
+
+        # 优先从配置文件读取配置，否则使用默认值
         self.timeout_seconds = self.config.get("timeout_seconds", 90)
         self.max_output_length = self.config.get("max_output_length", 3000)
 
-        # 统一输出路径，图片和其他文件都保存在此
-        base_path = "D:/Agent-xilin/AstrBot/data/plugins/astrobot_plugin_code_executor"
-        self.file_output_dir = os.path.join(base_path, 'outputs')
+        # **[新功能]** 从配置文件读取输出目录
+        configured_path = self.config.get("output_directory")
 
+        if configured_path and configured_path.strip():
+            self.file_output_dir = configured_path
+            logger.info(f"已从配置文件加载输出目录: {self.file_output_dir}")
+        else:
+            # 如果配置为空，则使用默认的后备路径
+            default_base_path = "D:/Agent-xilin/AstrBot/data/plugins/astrobot_plugin_code_executor"
+            self.file_output_dir = os.path.join(default_base_path, 'outputs')
+            logger.info(f"配置中 output_directory 为空, 使用默认输出目录: {self.file_output_dir}")
+
+        # 确保最终确定的目录存在
         if not os.path.exists(self.file_output_dir):
             logger.info(f"路径 {self.file_output_dir} 不存在，正在创建...")
             try:
@@ -34,8 +45,8 @@ class CodeExecutorPlugin(Star):
             except Exception as e:
                 logger.error(f"创建文件夹 {self.file_output_dir} 失败！错误: {e}")
 
-        logger.info(f"代码执行器插件已加载！输出文件保存至: {self.file_output_dir}")
-    @filter.permission_type(filter.PermissionType.ADMIN)
+        logger.info("代码执行器插件已加载！")
+
     @filter.llm_tool(name="execute_python_code")
     async def execute_python_code(self, event: AstrMessageEvent, code: str, description: str = "") -> str:
         '''
@@ -226,12 +237,10 @@ class CodeExecutorPlugin(Star):
                 
                 if 'plt' in exec_globals: plt.show, plt.savefig = original_show, original_savefig
 
-                # **[改动]** 智能检测新生成的文件
                 files_after = set(os.listdir(file_output_dir)) if os.path.exists(file_output_dir) else set()
                 newly_generated_filenames = files_after - files_before
                 newly_generated_files = [os.path.join(file_output_dir, f) for f in newly_generated_filenames]
                 
-                # 合并新生成的文件和AI明确要求发送的文件
                 all_files_to_send = list(set(newly_generated_files + files_to_send_explicitly))
 
                 return {
@@ -263,3 +272,4 @@ class CodeExecutorPlugin(Star):
 
     async def terminate(self):
         logger.info("代码执行器插件已卸载")
+
