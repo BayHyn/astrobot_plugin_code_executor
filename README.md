@@ -40,22 +40,29 @@
     "timeout_seconds": {
       "description": "代码执行超时时间（秒）",
       "type": "int",
-      "default": 90,
+      "default": 10,
       "hint": "设置代码执行的最大等待时间，防止死循环"
     },
     "max_output_length": {
       "description": "输出结果最大长度",
       "type": "int",
-      "default": 3000,
+      "default": 2000,
       "hint": "限制返回结果的字符数，避免输出过长"
+    },
+    "enable_plots": {
+      "description": "是否启用图表生成",
+      "type": "bool",
+      "default": true,
+      "hint": "启用后可以生成matplotlib图表并返回图片"
     },
     "output_directory": {
       "description": "代码生成的默认工作目录",
       "type": "string",
       "default": "",
-      "hint": "留空则使用插件内置的默认路径。推荐填写一个绝对路径，例如 'D:/my_ai_outputs' 或 '/home/user/ai_outputs'。AI将在此目录中创建和读取文件。"
+      "hint": "留空则使用插件内置的默认路径(会报错）。推荐填写一个绝对路径，例如 'D:/my_ai_outputs' 或 '/home/user/ai_outputs'。AI将在此目录中创建和读取文件。"
     }
-}
+  }
+  
 ```
 
 插件的部分行为可以通过修改其源代码进行配置。请打开插件的 `.py` 文件进行修改。
