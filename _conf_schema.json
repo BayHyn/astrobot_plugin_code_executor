@@ -1,0 +1,21 @@
+{
+    "timeout_seconds": {
+      "description": "代码执行超时时间（秒）",
+      "type": "int",
+      "default": 10,
+      "hint": "设置代码执行的最大等待时间，防止死循环"
+    },
+    "max_output_length": {
+      "description": "输出结果最大长度",
+      "type": "int",
+      "default": 2000,
+      "hint": "限制返回结果的字符数，避免输出过长"
+    },
+    "enable_plots": {
+      "description": "是否启用图表生成",
+      "type": "bool",
+      "default": true,
+      "hint": "启用后可以生成matplotlib图表并返回图片"
+    }
+  }
+  
