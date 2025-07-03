@@ -1,0 +1,14 @@
+matplotlib
+numpy
+pandas
+seaborn
+requests
+sympy
+openpyxl
+python-docx
+fpdf2
+Pillow
+pyyaml
+aiohttp
+plotly
+beautifulsoup4
