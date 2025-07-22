@@ -1,6 +1,6 @@
 # AstrBot代码执行器插件 (Super Code Executor) - 全能小狐狸汐林
 
-![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg)![Plugin Version](https://img.shields.io/badge/version-1.8.0--safe-brightgreen)![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg)![Plugin Version](https://img.shields.io/badge/version-2.0.0--enhanced-brightgreen)![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
 
 ⚠️⚠️⚠️ **安全警告** ⚠️⚠️⚠️
 
@@ -27,7 +27,7 @@
 
 **一个为 AstrBot 框架打造的，拥有完全本地系统访问权限的Python 代码执行函数插件。**
 
-在1.8.0-safe版本更新限制了仅管理员用户才能使用此函数，该插件移除了所有传统代码执行工具的沙盒限制，赋予语言模型（LLM）直接、完整地操作本地文件系统和执行任意代码的能力。
+在2.0.0-enhanced版本中大幅扩展了库支持，新增40+常用Python库，涵盖机器学习、深度学习、图像处理、数据库操作等领域。该插件移除了所有传统代码执行工具的沙盒限制，赋予语言模型（LLM）直接、完整地操作本地文件系统和执行任意代码的能力。
 
 ---
 
@@ -38,7 +38,18 @@
 *   **智能文件发送**:
     *   **自动检测**: 自动发现并发送在默认工作目录 (`SAVE_DIR`) 中新创建的所有文件。
     *   **指定发送**: 通过将任意文件的完整路径添加到 `FILES_TO_SEND` 列表，可以发送您电脑上任何位置的已有文件。
-*   **丰富的预装库**: 内置了 `pandas`, `numpy`, `matplotlib`, `requests`, `openpyxl` 等大量常用库，开箱即用，满足数据分析、网络请求、文件处理等各种需求。
+*   **丰富的预装库**: 内置了40+常用库，包括：
+    *   **数据科学**: `pandas`, `numpy`, `scipy`, `statsmodels`
+    *   **机器学习**: `scikit-learn`, `xgboost`, `lightgbm`, `tensorflow`, `torch`
+    *   **图像处理**: `opencv-python`, `PIL`, `imageio`
+    *   **可视化**: `matplotlib`, `seaborn`, `plotly`, `bokeh`
+    *   **网络请求**: `requests`, `aiohttp`, `beautifulsoup4`
+    *   **数据库**: `sqlite3`, `pymongo`, `sqlalchemy`, `psycopg2`
+    *   **文件处理**: `openpyxl`, `python-docx`, `fpdf2`, `yaml`
+    *   **自然语言处理**: `nltk`, `jieba`
+    *   **加密安全**: `cryptography`, `hashlib`, `hmac`
+    *   **时间处理**: `datetime`, `dateutil`, `calendar`
+    *   **系统工具**: `os`, `sys`, `pathlib`, `subprocess`
 *   **自动化图表生成**: `matplotlib` 绘图后无需手动保存，插件会自动将图表保存为图片文件并发送。
 
 ---

@@ -1,14 +1,53 @@
+# 基础数据科学库
 matplotlib
 numpy
 pandas
 seaborn
+scipy
+statsmodels
+
+# 网络请求
 requests
+aiohttp
+beautifulsoup4
+
+# 数学和符号计算
 sympy
+
+# 文件处理
 openpyxl
 python-docx
 fpdf2
 Pillow
 pyyaml
-aiohttp
+
+# 可视化
 plotly
-beautifulsoup4
+bokeh
+
+# 机器学习
+scikit-learn
+xgboost
+lightgbm
+tensorflow
+torch
+torchvision
+
+# 图像处理
+opencv-python
+imageio
+
+# 数据库
+pymongo
+sqlalchemy
+psycopg2-binary
+
+# 时间处理
+python-dateutil
+
+# 加密安全
+cryptography
+
+# 自然语言处理
+nltk
+jieba

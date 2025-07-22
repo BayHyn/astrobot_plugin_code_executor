@@ -16,7 +16,7 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.core.message.components import Plain
 
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "1.8.0--safe")
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.0.0--enhanced")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -92,12 +92,19 @@ class CodeExecutorPlugin(Star):
 
         ---
         **【可用库】**
-        - 网络：`requests`, `aiohttp`, `BeautifulSoup`
-        - 数据：`pandas` (as pd), `numpy` (as np)
-        - 文件：`openpyxl`, `python-docx`, `fpdf2`, `json`, `yaml`
-        - 图表：`matplotlib.pyplot` (as plt), `seaborn` (as sns), `plotly`
-        - 图像：`PIL.Image`, `PIL`
-        - 其他：`datetime`, `re`, `sympy`, `os`, `io`, `shutil`, `zipfile`
+        - 网络：`requests`, `aiohttp`, `BeautifulSoup`, `urllib`, `socket`
+        - 数据：`pandas` (as pd), `numpy` (as np), `scipy`, `statsmodels`
+        - 文件：`openpyxl`, `python-docx`, `fpdf2`, `json`, `yaml`, `csv`, `sqlite3`, `pickle`
+        - 图表：`matplotlib.pyplot` (as plt), `seaborn` (as sns), `plotly`, `bokeh`
+        - 图像：`PIL.Image`, `PIL`, `cv2` (OpenCV), `imageio`
+        - 机器学习：`sklearn`, `tensorflow`, `torch` (PyTorch), `xgboost`, `lightgbm`
+        - 数据库：`sqlite3`, `pymongo`, `sqlalchemy`, `psycopg2`
+        - 时间处理：`datetime`, `time`, `calendar`, `dateutil`
+        - 加密安全：`hashlib`, `hmac`, `secrets`, `base64`, `cryptography`
+        - 文本处理：`re`, `string`, `textwrap`, `difflib`, `nltk`, `jieba`
+        - 系统工具：`os`, `sys`, `io`, `shutil`, `zipfile`, `tarfile`, `pathlib`, `subprocess`
+        - 数学科学：`sympy`, `math`, `statistics`, `random`, `decimal`, `fractions`
+        - 其他实用：`itertools`, `collections`, `functools`, `operator`, `copy`, `uuid`
 
         ---
         **【编码要求】**
@@ -131,7 +138,16 @@ class CodeExecutorPlugin(Star):
                 text_response = "\n".join(response_parts)
                 await event.send(MessageChain().message(text_response))
 
-                # 发送文件
+                # 构建返回给LLM的详细信息
+                llm_context_parts = ["✅ 代码执行成功！"]
+                
+                # 添加执行输出到LLM上下文
+                if result["output"] and result["output"].strip():
+                    full_output = result["output"].strip()
+                    llm_context_parts.append(f"📤 执行结果：\n```\n{full_output}\n```")
+
+                # 发送文件并记录到LLM上下文
+                sent_files = []
                 if result["file_paths"]:
                     logger.info(f"发现 {len(result['file_paths'])} 个待发送文件，正在处理...")
                     for file_path in result["file_paths"]:
@@ -147,18 +163,28 @@ class CodeExecutorPlugin(Star):
                             if is_image:
                                 logger.info(f"正在以图片形式发送: {file_path}")
                                 await event.send(MessageChain().file_image(file_path))
+                                sent_files.append(f"📷 已发送图片: {file_name}")
                             else:
                                 logger.info(f"正在以文件形式发送: {file_path}")
                                 await event.send(MessageChain().message(f"📄 正在发送文件: {file_name}"))
                                 chain = [Comp.File(file=file_path, name=file_name)]
                                 await event.send(event.chain_result(chain))
+                                sent_files.append(f"📄 已发送文件: {file_name}")
                         except Exception as e:
                             logger.error(f"发送文件/图片 {file_path} 失败: {e}", exc_info=True)
                             await event.send(MessageChain().message(f"❌ 发送文件 {os.path.basename(file_path)} 失败"))
+                            sent_files.append(f"❌ 发送失败: {os.path.basename(file_path)}")
+                
+                # 添加文件发送信息到LLM上下文
+                if sent_files:
+                    llm_context_parts.append("\n".join(sent_files))
 
+                # 构建完整的LLM上下文返回信息
+                llm_context = "\n\n".join(llm_context_parts)
+                
                 if not (result["output"] and result["output"].strip()) and not result["file_paths"]:
                     return "代码执行完成，但无文件、图片或文本输出。"
-                return "任务完成！"
+                return llm_context
 
             else:
                 error_msg = f"❌ 代码执行失败！\n错误信息：\n```\n{result['error']}\n```"
@@ -166,13 +192,17 @@ class CodeExecutorPlugin(Star):
                     error_msg += f"\n\n出错前输出：\n```\n{result['output']}\n```"
                 error_msg += "\n请分析错误信息，修正代码或调整逻辑后重试。"
                 await event.send(MessageChain().message(error_msg))
-                return "代码执行失败，请根据错误信息修正代码后重试。"
+                
+                # 返回详细的错误信息给LLM上下文
+                return error_msg
 
         except Exception as e:
             logger.error(f"插件内部错误: {str(e)}", exc_info=True)
             error_msg = f"🔥 插件内部错误：{str(e)}\n请检查插件配置或环境后重试。"
             await event.send(MessageChain().message(error_msg))
-            return "插件内部错误，请检查配置或环境。"
+            
+            # 返回详细的错误信息给LLM上下文
+            return error_msg
 
     async def _execute_code_safely(self, code: str) -> Dict[str, Any]:
         def run_code(code_to_run: str, file_output_dir: str):
@@ -224,11 +254,40 @@ class CodeExecutorPlugin(Star):
                     logger.warning("matplotlib 不可用，图表功能禁用")
 
                 libs_to_inject = {
-                    'numpy': 'np', 'pandas': 'pd', 'seaborn': 'sns', 'requests': 'requests',
-                    'sympy': 'sympy', 'json': 'json', 'yaml': 'yaml', 'datetime': 'datetime',
-                    're': 're', 'os': 'os', 'openpyxl': 'openpyxl', 'docx': 'docx',
-                    'fpdf': 'fpdf', 'PIL': 'PIL', 'shutil': 'shutil', 'zipfile': 'zipfile',
-                    'aiohttp': 'aiohttp', 'plotly': 'plotly'
+                    # 数据科学核心
+                    'numpy': 'np', 'pandas': 'pd', 'scipy': 'scipy', 'statsmodels': 'statsmodels',
+                    # 网络请求
+                    'requests': 'requests', 'aiohttp': 'aiohttp', 'urllib': 'urllib', 'socket': 'socket',
+                    # 可视化
+                    'seaborn': 'sns', 'plotly': 'plotly', 'bokeh': 'bokeh',
+                    # 机器学习
+                    'sklearn': 'sklearn', 'tensorflow': 'tf', 'torch': 'torch', 
+                    'xgboost': 'xgb', 'lightgbm': 'lgb',
+                    # 文件处理
+                    'openpyxl': 'openpyxl', 'docx': 'docx', 'fpdf': 'fpdf', 
+                    'json': 'json', 'yaml': 'yaml', 'csv': 'csv', 'pickle': 'pickle',
+                    # 数据库
+                    'sqlite3': 'sqlite3', 'pymongo': 'pymongo', 'sqlalchemy': 'sqlalchemy',
+                    'psycopg2': 'psycopg2',
+                    # 图像处理
+                    'PIL': 'PIL', 'cv2': 'cv2', 'imageio': 'imageio',
+                    # 时间处理
+                    'datetime': 'datetime', 'time': 'time', 'calendar': 'calendar',
+                    # 加密安全
+                    'hashlib': 'hashlib', 'hmac': 'hmac', 'secrets': 'secrets', 
+                    'base64': 'base64', 'cryptography': 'cryptography',
+                    # 文本处理
+                    're': 're', 'string': 'string', 'textwrap': 'textwrap', 
+                    'difflib': 'difflib', 'nltk': 'nltk', 'jieba': 'jieba',
+                    # 系统工具
+                    'os': 'os', 'sys': 'sys', 'shutil': 'shutil', 'zipfile': 'zipfile',
+                    'tarfile': 'tarfile', 'pathlib': 'pathlib', 'subprocess': 'subprocess',
+                    # 数学科学
+                    'sympy': 'sympy', 'math': 'math', 'statistics': 'statistics',
+                    'random': 'random', 'decimal': 'decimal', 'fractions': 'fractions',
+                    # 实用工具
+                    'itertools': 'itertools', 'collections': 'collections', 
+                    'functools': 'functools', 'operator': 'operator', 'copy': 'copy', 'uuid': 'uuid'
                 }
                 for lib_name, alias in libs_to_inject.items():
                     try:
@@ -236,12 +295,33 @@ class CodeExecutorPlugin(Star):
                         exec_globals[alias or lib_name] = lib
                     except ImportError:
                         logger.warning(f"库 {lib_name} 不可用，相关功能禁用")
+                # 特殊库导入处理
                 try:
                     from bs4 import BeautifulSoup; exec_globals['BeautifulSoup'] = BeautifulSoup
                 except ImportError:
                     pass
                 try:
                     from PIL import Image; exec_globals['Image'] = Image
+                except ImportError:
+                    pass
+                try:
+                    from dateutil import parser as dateutil_parser; exec_globals['dateutil_parser'] = dateutil_parser
+                    import dateutil; exec_globals['dateutil'] = dateutil
+                except ImportError:
+                    pass
+                try:
+                    import sklearn; exec_globals['sklearn'] = sklearn
+                    from sklearn import datasets, model_selection, metrics
+                    exec_globals.update({'datasets': datasets, 'model_selection': model_selection, 'metrics': metrics})
+                except ImportError:
+                    pass
+                try:
+                    import tensorflow as tf; exec_globals['tf'] = tf
+                except ImportError:
+                    pass
+                try:
+                    import torch; exec_globals['torch'] = torch
+                    import torch.nn as nn; exec_globals['nn'] = nn
                 except ImportError:
                     pass
 
