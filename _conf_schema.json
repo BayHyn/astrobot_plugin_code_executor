@@ -21,7 +21,7 @@
       "description": "代码生成的默认工作目录",
       "type": "string",
       "default": "",
-      "hint": "留空则使用插件内置的默认路径(会报错）。推荐填写一个绝对路径，例如 'D:/my_ai_outputs' 或 '/home/user/ai_outputs'。AI将在此目录中创建和读取文件。"
+      "hint": "留空则使用插件内置的默认路径。推荐填写一个绝对路径，例如 'D:/my_ai_outputs' 或 '/home/user/ai_outputs'。AI将在此目录中创建和读取文件。"
     }
   }
   
