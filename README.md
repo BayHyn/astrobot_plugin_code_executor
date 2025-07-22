@@ -1,6 +1,6 @@
 # AstrBot代码执行器插件 (Super Code Executor) - 全能小狐狸汐林
 
-![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg)![Plugin Version](https://img.shields.io/badge/version-2.0.0--enhanced-brightgreen)![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg) ![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg) ![Plugin Version](https://img.shields.io/badge/version-2.1.0--webui-brightgreen) ![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
 
 ⚠️⚠️⚠️ **安全警告** ⚠️⚠️⚠️
 
@@ -15,7 +15,12 @@
 +=======================================================+
 ```
 
-## 🔐 安全架构要求
+## 🔐 安全架构与风险
+
+**作为开发者我已经完成的安全措施**
+1. 代码执行验证管理员权限
+2. 代码每次执行存档
+
 **必须满足以下至少一项安全措施：**
 1. **会话隔离**：启用AstrBot的会话隔离功能，确保不同会话间的执行环境完全独立
 2. **群员识别**：启用AstrBot的群员识别系统，严格区分管理员/普通用户权限
@@ -25,161 +30,199 @@
 - 使用专用低权限系统账户
 - 定期备份关键数据
 
-**一个为 AstrBot 框架打造的，拥有完全本地系统访问权限的Python 代码执行函数插件。**
-
-在2.0.0-enhanced版本中大幅扩展了库支持，新增40+常用Python库，涵盖机器学习、深度学习、图像处理、数据库操作等领域。该插件移除了所有传统代码执行工具的沙盒限制，赋予语言模型（LLM）直接、完整地操作本地文件系统和执行任意代码的能力。
-
----
-
-## ✨ 特色功能
-
-*   **无限制代码执行**: 执行任意 Python 代码，没有任何函数或模块的黑名单。
-*   **完全文件系统访问**: 使用 `os`, `shutil` 等库，在所有盘符（如 `C:\`, `D:\`）上自由地创建、读取、修改、删除文件和目录。
-*   **智能文件发送**:
-    *   **自动检测**: 自动发现并发送在默认工作目录 (`SAVE_DIR`) 中新创建的所有文件。
-    *   **指定发送**: 通过将任意文件的完整路径添加到 `FILES_TO_SEND` 列表，可以发送您电脑上任何位置的已有文件。
-*   **丰富的预装库**: 内置了40+常用库，包括：
-    *   **数据科学**: `pandas`, `numpy`, `scipy`, `statsmodels`
-    *   **机器学习**: `scikit-learn`, `xgboost`, `lightgbm`, `tensorflow`, `torch`
-    *   **图像处理**: `opencv-python`, `PIL`, `imageio`
-    *   **可视化**: `matplotlib`, `seaborn`, `plotly`, `bokeh`
-    *   **网络请求**: `requests`, `aiohttp`, `beautifulsoup4`
-    *   **数据库**: `sqlite3`, `pymongo`, `sqlalchemy`, `psycopg2`
-    *   **文件处理**: `openpyxl`, `python-docx`, `fpdf2`, `yaml`
-    *   **自然语言处理**: `nltk`, `jieba`
-    *   **加密安全**: `cryptography`, `hashlib`, `hmac`
-    *   **时间处理**: `datetime`, `dateutil`, `calendar`
-    *   **系统工具**: `os`, `sys`, `pathlib`, `subprocess`
-*   **自动化图表生成**: `matplotlib` 绘图后无需手动保存，插件会自动将图表保存为图片文件并发送。
-
----
-
-## 🚀 安装
-
-1.  下载 `code_executor_plugin.py` 文件（或者您重命名后的插件文件）。
-2.  将该文件放入您的 AstrBot 的插件目录中，通常是 `<AstrBot根目录>/data//plugins/`。
-3.  重启您的 AstrBot 程序。
-
----
-
-## ⚙️ 配置
-
-
-插件的关键行为通过其 `config.json` 文件进行配置。您可以在首次运行后在插件的数据目录中找到它。
-
-**`config.json` 示例:**
-
-```json
-{
-    "timeout_seconds": {
-      "description": "代码执行超时时间（秒）",
-      "type": "int",
-      "default": 10,
-      "hint": "设置代码执行的最大等待时间，防止死循环"
-    },
-    "max_output_length": {
-      "description": "输出结果最大长度",
-      "type": "int",
-      "default": 2000,
-      "hint": "限制返回结果的字符数，避免输出过长"
-    },
-    "enable_plots": {
-      "description": "是否启用图表生成",
-      "type": "bool",
-      "default": true,
-      "hint": "启用后可以生成matplotlib图表并返回图片"
-    },
-    "output_directory": {
-      "description": "代码生成的默认工作目录",
-      "type": "string",
-      "default": "",
-      "hint": "留空则使用插件内置的默认路径。推荐填写一个绝对路径，例如 'D:/my_ai_outputs' 或 '/home/user/ai_outputs'。AI将在此目录中创建和读取文件。"
-    }
-  }
-  
-```
-
-插件的部分行为可以通过修改其源代码进行配置。请打开插件的 `.py` 文件进行修改。
-
-关键配置项位于 `__init__` 方法中：
-
-```python
-# 插件超时时间（秒）
-self.timeout_seconds = self.config.get("timeout_seconds", 90)
-
-# 返回给LLM的最大文本长度
-self.max_output_length = self.config.get("max_output_length", 3000)
-
-# 默认的工作目录，用于存放生成的文件
-# 若不填写配置项会使用AstrBot默认为插件分配的地址
-
-
-📖 使用方法
-当您向语言模型下达指令时，它会自动调用此工具。以下是AI使用此工具的核心逻辑：
-
-1. 生成新文件 (默认方式)
-当任务需要创建新文件时（如生成报告、数据表、图表），AI 会将文件保存在 SAVE_DIR 目录中。插件会自动检测到这些新文件并发送给您。
-
-AI 执行的代码示例:
-
-PYTHON
-import pandas as pd
-import os
-
-# 创建一个数据表
-data = {'产品': ['A', 'B', 'C'], '销量': [100, 150, 80]}
-df = pd.DataFrame(data)
-
-# 使用 os.path.join 将其保存在默认工作目录
-save_path = os.path.join(SAVE_DIR, 'sales_report.xlsx')
-df.to_excel(save_path, index=False)
-
-print(f"销售报告已生成: {save_path}")
-插件会自动将 sales_report.xlsx 发送给用户。
-
-2. 发送本地已有文件 (高级方式)
-当您需要AI发送一个电脑上已经存在的文件时，可以让AI将该文件的完整路径添加到 FILES_TO_SEND 列表中。
-
-您的指令示例:
-
-“帮我把 D盘 marketing 文件夹里的 quarterly_review.pptx 发给我”
-
-AI 执行的代码示例:
-
-PYTHON
-import os
-
-# AI 根据指令定位文件
-file_path = "D:/marketing/quarterly_review.pptx"
-
-# 检查文件是否存在，并添加到待发送列表
-if os.path.exists(file_path):
-    FILES_TO_SEND.append(file_path)
-    print(f"已准备发送文件: {file_path}")
-else:
-    print(f"错误: 文件未找到 at {file_path}")
-插件会将 D:/marketing/quarterly_review.pptx 发送给用户。
-```
-
-‼️ 安全警告 ‼️
-此插件权限较大，带来了巨大的安全风险。
-## 💀 安全风险再强调 💀
+‼️ **此插件权限极大，有一定安全风险。**
+- 没有沙盒，代码拥有与运行用户相同的系统权限。
+- 一个错误或恶意指令可能导致严重破坏（如删除系统文件、覆盖关键数据等）。
+- 请仅在完全私有、可信环境中运行本插件，不要暴露在公共网络或不受信任用户面前。
 
 ```diff
 - 高危操作示例（绝对禁止）：
-  • rm -rf / 或等效的Python代码
+  • rm -rf / 或等效Python代码
   • 覆盖系统关键文件
   • 下载执行未知脚本
   • 修改系统环境变量
   • 创建计划任务/开机自启
-  
 + 安全建议：
   • 定期检查插件生成的代码
   • 设置文件操作白名单
   • 启用操作日志审计
   • 使用--restrict标志运行
 ```
-它没有沙盒。语言模型执行的代码将拥有与运行 AstrBot 程序的用户完全相同的权限。
-一个错误的或恶意的指令可能会导致语言模型执行破坏性操作（例如，os.remove("C:/boot.ini") 或 shutil.rmtree("C:/Users/YourUser/Documents")）。
-请仅在完全私有、可信的环境中运行此插件。 不要将搭载此插件的机器人暴露在公共网络或不受信任的用户面前。
-您对使用此插件造成的所有后果负全部责任。
+
+---
+
+# ✨ 插件功能总览
+
+- **无限制代码执行**：执行任意Python代码，无黑名单。
+- **完全文件系统访问**：可在所有盘符自由创建、读取、修改、删除文件和目录。
+- **智能文件发送**：自动检测并发送新生成文件，或指定任意路径文件发送。
+- **丰富预装库**：内置40+常用库，涵盖数据科学、机器学习、图像处理、数据库、可视化、NLP等。
+- **自动化图表生成**：matplotlib绘图后自动保存并发送图片。
+- **执行历史记录系统**：每次代码执行自动记录到SQLite数据库，含详细信息、性能统计、文件追踪。
+- **美观WebUI界面**：现代化响应式设计，支持统计、搜索、分页、详情查看。
+- **强大搜索与筛选**：支持关键词、用户、状态、组合筛选。
+- **分页浏览**：智能分页与页码导航。
+
+---
+
+# 🚀 安装与启动
+
+1. 下载 `code_executor_plugin.py` 文件（或重命名后的插件文件）。
+2. 放入 AstrBot 插件目录（通常为 `<AstrBot根目录>/data/plugins/`）。
+3. 安装依赖包：
+
+```bash
+pip install fastapi uvicorn[standard] jinja2 aiosqlite
+```
+
+4. 重启 AstrBot。
+5. 插件加载时自动初始化数据库并启动WebUI（默认端口22334）。
+6. 通过浏览器访问 http://localhost:22334 查看历史记录界面。
+
+---
+
+# ⚙️ 配置说明
+
+插件关键行为通过 `config.json` 配置，首次运行后在插件数据目录生成。
+
+**主要配置项：**
+
+```json
+{
+  "timeout_seconds": 90,
+  "max_output_length": 3000,
+  "enable_plots": true,
+  "output_directory": "D:/ai_outputs",
+  "webui_port": 22334
+}
+```
+
+- `timeout_seconds`：代码执行超时时间（秒）
+- `max_output_length`：输出结果最大长度
+- `enable_plots`：是否启用图表生成
+- `output_directory`：默认工作目录
+- `webui_port`：WebUI服务端口（可自定义，避免端口冲突）
+
+**部分行为可通过源码 `__init__` 方法调整。**
+
+---
+
+# 📖 使用方法
+
+## 1. 生成新文件（默认方式）
+
+当任务需创建新文件（如报告、数据表、图表），AI会将文件保存在 `SAVE_DIR` 目录，插件自动检测并发送。
+
+```python
+import pandas as pd
+import os
+
+data = {'产品': ['A', 'B', 'C'], '销量': [100, 150, 80]}
+df = pd.DataFrame(data)
+save_path = os.path.join(SAVE_DIR, 'sales_report.xlsx')
+df.to_excel(save_path, index=False)
+print(f"销售报告已生成: {save_path}")
+```
+
+## 2. 发送本地已有文件（高级方式）
+
+让AI将文件完整路径添加到 `FILES_TO_SEND` 列表即可发送任意位置文件。
+
+```python
+import os
+file_path = "D:/marketing/quarterly_review.pptx"
+if os.path.exists(file_path):
+    FILES_TO_SEND.append(file_path)
+    print(f"已准备发送文件: {file_path}")
+else:
+    print(f"错误: 文件未找到 at {file_path}")
+```
+
+---
+
+# 🗄️ 执行历史与WebUI
+
+- 所有执行历史自动记录于 `execution_history.db`（SQLite）。
+- WebUI支持统计面板、搜索筛选、分页浏览、详情查看。
+- 支持通过配置文件自定义端口。
+
+## 数据库表结构
+
+```sql
+CREATE TABLE execution_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sender_id TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    code TEXT NOT NULL,
+    description TEXT,
+    success BOOLEAN NOT NULL,
+    output TEXT,
+    error_msg TEXT,
+    file_paths TEXT,
+    execution_time REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+# 📦 依赖包
+
+- fastapi
+- uvicorn[standard]
+- jinja2
+- aiosqlite
+
+---
+
+# 🔧 技术实现
+
+- **ExecutionHistoryDB** (`database.py`)：异步数据库操作，分页与统计。
+- **CodeExecutorWebUI** (`webui.py`)：FastAPI+Jinja2，RESTful API与HTML界面。
+- **CodeExecutorPlugin** (`main.py`)：主插件类，集成数据库与WebUI。
+- 所有数据库操作异步，不阻塞主线程。
+- WebUI后台运行，不影响主功能。
+- 完善异常捕获与日志。
+
+---
+
+# 🛡️ 安全与故障排查
+
+- WebUI服务绑定 `0.0.0.0`，支持局域网访问。
+- 建议生产环境配置防火墙。
+- 数据库文件受系统权限保护。
+- 所有用户输入均HTML转义。
+
+## 常见问题
+
+1. **WebUI无法访问**：检查端口占用、插件日志、或防火墙。
+2. **数据库错误**：检查写入权限、文件损坏、重启插件。
+3. **记录缺失**：检查数据库连接、日志、执行权限。
+
+## 日志查看
+- 详见AstroBot日志系统，包括数据库、WebUI、错误异常。
+
+---
+
+# 🎯 使用建议
+
+- 定期清理过期记录，避免数据库过大。
+- 如端口被占用请修改配置。
+- 外网访问请加强安全措施。
+- 可通过WebUI监控性能与成功率。
+
+---
+
+# 📞 技术支持
+
+如遇问题请：
+1. 查看插件日志
+2. 检查配置文件
+3. 确认依赖包已安装
+4. 联系作者QQ：723926109
+
+---
+
+**版本**: 2.0.0--enhanced  
+**作者**: Xican  
+**更新日期**: 2025年7月22日

@@ -15,8 +15,11 @@ import astrbot.api.message_components as Comp
 from astrbot.api.provider import ProviderRequest
 from astrbot.core.message.components import Plain
 
+from .database import ExecutionHistoryDB
+from .webui import CodeExecutorWebUI
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.0.0--enhanced")
+
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.1.0--webui")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -26,6 +29,7 @@ class CodeExecutorPlugin(Star):
         # 优先从配置文件读取配置，否则使用默认值
         self.timeout_seconds = self.config.get("timeout_seconds", 90)
         self.max_output_length = self.config.get("max_output_length", 3000)
+        self.webui_port = self.config.get("webui_port", 22334)
 
         # **[新功能]** 从配置文件读取输出目录
         configured_path = self.config.get("output_directory")
@@ -47,7 +51,31 @@ class CodeExecutorPlugin(Star):
             except Exception as e:
                 logger.error(f"创建文件夹 {self.file_output_dir} 失败！错误: {e}")
 
+        # 初始化数据库
+        plugin_data_dir = self.tools.get_data_dir()
+        db_path = os.path.join(plugin_data_dir, 'execution_history.db')
+        self.db = ExecutionHistoryDB(db_path)
+        
+        # 初始化WebUI
+        self.webui = CodeExecutorWebUI(self.db, self.webui_port)
+        self.webui_task = None
+        
+        # 异步初始化数据库和启动WebUI
+        asyncio.create_task(self._async_init())
+
         logger.info("代码执行器插件已加载！")
+    
+    async def _async_init(self):
+        """异步初始化数据库和WebUI"""
+        try:
+            # 初始化数据库
+            await self.db.init_database()
+            
+            # 启动WebUI服务器
+            self.webui_task = asyncio.create_task(self.webui.start_server())
+            logger.info(f"WebUI服务已启动，访问地址: http://localhost:{self.webui_port}")
+        except Exception as e:
+            logger.error(f"异步初始化失败: {e}", exc_info=True)
 
 
     @filter.llm_tool(name="execute_python_code")
@@ -97,7 +125,6 @@ class CodeExecutorPlugin(Star):
         - 文件：`openpyxl`, `python-docx`, `fpdf2`, `json`, `yaml`, `csv`, `sqlite3`, `pickle`
         - 图表：`matplotlib.pyplot` (as plt), `seaborn` (as sns), `plotly`, `bokeh`
         - 图像：`PIL.Image`, `PIL`, `cv2` (OpenCV), `imageio`
-        - 机器学习：`sklearn`, `tensorflow`, `torch` (PyTorch), `xgboost`, `lightgbm`
         - 数据库：`sqlite3`, `pymongo`, `sqlalchemy`, `psycopg2`
         - 时间处理：`datetime`, `time`, `calendar`, `dateutil`
         - 加密安全：`hashlib`, `hmac`, `secrets`, `base64`, `cryptography`
@@ -123,9 +150,15 @@ class CodeExecutorPlugin(Star):
             return "用户不是管理员，无权限运行代码，请告诉他不要使用此功能"
         logger.info(f"收到任务: {description or '无描述'}")
         logger.debug(f"代码内容:\n{code}")
+        
+        # 获取发言人信息
+        sender_id = event.get_sender_id()
+        sender_name = event.get_sender_name()
+        start_time = time.time()
 
         try:
             result = await self._execute_code_safely(code)
+            execution_time = time.time() - start_time
 
             if result["success"]:
                 response_parts = ["✅ 任务完成！"]
@@ -182,6 +215,22 @@ class CodeExecutorPlugin(Star):
                 # 构建完整的LLM上下文返回信息
                 llm_context = "\n\n".join(llm_context_parts)
                 
+                # 记录成功执行到数据库
+                try:
+                    await self.db.add_execution_record(
+                        sender_id=sender_id,
+                        sender_name=sender_name,
+                        code=code,
+                        description=description,
+                        success=True,
+                        output=result["output"],
+                        error_msg=None,
+                        file_paths=result["file_paths"],
+                        execution_time=execution_time
+                    )
+                except Exception as db_error:
+                    logger.error(f"记录执行历史失败: {db_error}", exc_info=True)
+                
                 if not (result["output"] and result["output"].strip()) and not result["file_paths"]:
                     return "代码执行完成，但无文件、图片或文本输出。"
                 return llm_context
@@ -193,13 +242,46 @@ class CodeExecutorPlugin(Star):
                 error_msg += "\n请分析错误信息，修正代码或调整逻辑后重试。"
                 await event.send(MessageChain().message(error_msg))
                 
+                # 记录失败执行到数据库
+                try:
+                    await self.db.add_execution_record(
+                        sender_id=sender_id,
+                        sender_name=sender_name,
+                        code=code,
+                        description=description,
+                        success=False,
+                        output=result.get("output"),
+                        error_msg=result["error"],
+                        file_paths=[],
+                        execution_time=execution_time
+                    )
+                except Exception as db_error:
+                    logger.error(f"记录执行历史失败: {db_error}", exc_info=True)
+                
                 # 返回详细的错误信息给LLM上下文
                 return error_msg
 
         except Exception as e:
             logger.error(f"插件内部错误: {str(e)}", exc_info=True)
+            execution_time = time.time() - start_time
             error_msg = f"🔥 插件内部错误：{str(e)}\n请检查插件配置或环境后重试。"
             await event.send(MessageChain().message(error_msg))
+            
+            # 记录插件内部错误到数据库
+            try:
+                await self.db.add_execution_record(
+                    sender_id=sender_id,
+                    sender_name=sender_name,
+                    code=code,
+                    description=description,
+                    success=False,
+                    output=None,
+                    error_msg=f"插件内部错误: {str(e)}",
+                    file_paths=[],
+                    execution_time=execution_time
+                )
+            except Exception as db_error:
+                logger.error(f"记录执行历史失败: {db_error}", exc_info=True)
             
             # 返回详细的错误信息给LLM上下文
             return error_msg
@@ -260,9 +342,6 @@ class CodeExecutorPlugin(Star):
                     'requests': 'requests', 'aiohttp': 'aiohttp', 'urllib': 'urllib', 'socket': 'socket',
                     # 可视化
                     'seaborn': 'sns', 'plotly': 'plotly', 'bokeh': 'bokeh',
-                    # 机器学习
-                    'sklearn': 'sklearn', 'tensorflow': 'tf', 'torch': 'torch', 
-                    'xgboost': 'xgb', 'lightgbm': 'lgb',
                     # 文件处理
                     'openpyxl': 'openpyxl', 'docx': 'docx', 'fpdf': 'fpdf', 
                     'json': 'json', 'yaml': 'yaml', 'csv': 'csv', 'pickle': 'pickle',
@@ -309,21 +388,7 @@ class CodeExecutorPlugin(Star):
                     import dateutil; exec_globals['dateutil'] = dateutil
                 except ImportError:
                     pass
-                try:
-                    import sklearn; exec_globals['sklearn'] = sklearn
-                    from sklearn import datasets, model_selection, metrics
-                    exec_globals.update({'datasets': datasets, 'model_selection': model_selection, 'metrics': metrics})
-                except ImportError:
-                    pass
-                try:
-                    import tensorflow as tf; exec_globals['tf'] = tf
-                except ImportError:
-                    pass
-                try:
-                    import torch; exec_globals['torch'] = torch
-                    import torch.nn as nn; exec_globals['nn'] = nn
-                except ImportError:
-                    pass
+                # 机器学习库导入已移除
 
                 exec(code_to_run, exec_globals)
 
@@ -377,4 +442,18 @@ class CodeExecutorPlugin(Star):
                     "file_paths": []}
 
     async def terminate(self):
-        logger.info("代码执行器插件已卸载")
+        """插件卸载时的清理工作"""
+        try:
+            # 停止WebUI服务器
+            if self.webui_task and not self.webui_task.done():
+                logger.info("正在停止WebUI服务器...")
+                await self.webui.stop_server()
+                self.webui_task.cancel()
+                try:
+                    await self.webui_task
+                except asyncio.CancelledError:
+                    pass
+            
+            logger.info("代码执行器插件已卸载")
+        except Exception as e:
+            logger.error(f"插件卸载时发生错误: {e}", exc_info=True)
