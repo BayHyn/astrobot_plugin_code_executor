@@ -649,7 +649,7 @@ class CodeExecutorWebUI:
                         <div class="record-time">${formatTime(record.created_at)}</div>
                     </div>
                     ${record.description ? `<div class="record-description">${escapeHtml(record.description)}</div>` : ''}
-                    <div class="record-code">${escapeHtml(record.code.substring(0, 200))}${record.code.length > 200 ? '...' : ''}</div>
+                    <div class="record-code">${escapeHtml(record.code)}</div>
                 </div>
             `).join('');
         }

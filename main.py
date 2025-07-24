@@ -125,45 +125,49 @@ class CodeExecutorPlugin(Star):
     @filter.llm_tool(name="execute_python_code")
     async def execute_python_code(self, event: AstrMessageEvent, code: str, description: str = "") -> str:
         '''
-        **这是一个代码执行函数**
-        **优先使用此函数**，它远超 `fetch_url` 的单一网页内容获取功能，这个支持计算、文件操作、可视化和复杂网络请求。仅当任务明确只需要获取网页原始内容时才考虑 `fetch_url`.
-        **【调用场景】**
-        **必须**在以下场景调用此函数，执行代码获取精确结果，禁止文字猜测：
-        1. **计算/数据处理**：如"计算 (1+5)*3/2"或"分析数据最大值"。
-        2. **文件操作**：生成/读取 Excel、PDF、CSV 、图片类型等，如"生成 Excel 表格"。
-        3. **网络请求**：请求各种api或者其他网络操作。
-        4. **数据可视化**：如"绘制销售趋势图"或"生成饼图"。
-        5. **图像处理**：如"下载猫的图片并调整大小"。
-        6. **复杂逻辑**：如"规划最短路径"或"模拟抽奖"。
-        7. **文件操作**: 允许AI生成符合格式的代码操作本机文件发送给用户，包括但不限于删除，查找，修改等。
-        **【文件处理规则 - 必须严格遵守】**
-        1. **新建文件**: 必须保存到 `SAVE_DIR` 目录，使用 `os.path.join(SAVE_DIR, 'filename')`
-        2. **发送文件**: 必须将完整文件路径添加到 `FILES_TO_SEND` 列表
-        
-        **示例**:
+        **This is a code execution function**
+        **Prioritize this function**, it far surpasses the single web content fetching capability of `fetch_url`. It supports calculations, file operations, visualizations, and complex network requests. Only consider `fetch_url` when the task explicitly requires fetching raw web content.
+        **【Usage Scenarios】**
+        **MUST** call this function in the following scenarios to execute code for precise results, prohibit guessing with text:
+        1. **Calculations/Data Processing**: e.g., "Calculate (1+5)*3/2" or "Analyze the maximum value in data".
+        2. **File Operations**: Generate/read Excel, PDF, CSV, images, etc., e.g., "Generate an Excel table".
+        3. **Network Requests**: Request various APIs or other network operations.
+        4. **Data Visualization**: e.g., "Draw a sales trend chart" or "Generate a pie chart".
+        5. **Image Processing**: e.g., "Download a cat image and resize it".
+        6. **Complex Logic**: e.g., "Plan the shortest path" or "Simulate a lottery".
+        7. **File Operations**: Allow AI to generate code in the proper format to operate local files and send to users, including but not limited to delete, search, modify, etc.
+        **【File Handling Rules - MUST Strictly Follow】**
+        1. **Create New File**: MUST save to `SAVE_DIR` directory, using `os.path.join(SAVE_DIR, 'filename')`
+        2. **Send File**: MUST add the full file path to the `FILES_TO_SEND` list (this variable is global, do not define it in your code, use it directly). Once added to the list, the file will be automatically sent to the user, and the task is considered complete, no need to call this function repeatedly.
+
+        **Example**:
         ```python
-        # 生成新文件
+        # Create new file
         plt.savefig(os.path.join(SAVE_DIR, 'chart.png'))
+        FILES_TO_SEND.append(os.path.join(SAVE_DIR, 'chart.png'))  # After adding, the file will be sent automatically, task complete
         
-        # 发送已有文件
-        FILES_TO_SEND.append("D:/data/report.xlsx")
+        # Send existing file (do not define FILES_TO_SEND in your code, use it directly)
+        FILES_TO_SEND.append("D:/data/report.xlsx")  # Automatically sent after adding
         ```
-        - 这个函数拥有完全的文件系统权限，可以读取/写入任何可访问的目录。
-        **【可用库】**
-        几乎常用库都能支持，请放心写代码执行
-        **【编码要求】**
-        - 文件操作需检查路径和异常。
-        - 支持操作各个盘符。
-        - 网络请求需设置超时和重试。
-        - 代码必须独立运行，无外部依赖。
+        - This function has full file system permissions and can read/write any accessible directory.
+        **【Stop Conditions】**
+        - Once the code executes successfully, files are generated and added to FILES_TO_SEND (if needed), or output is produced, the task is complete. No need to call this function repeatedly to continue the same task.
+        - If there is no file or output, the function will explicitly return task completion information.
+        **【Available Libraries】**
+        Almost all common libraries are supported, feel free to write and execute code.
+        **【Coding Requirements】**
+        - File operations must check paths and exceptions.
+        - Support operations on various drive letters.
+        - Network requests must set timeouts and retries.
+        - Code must run independently without external dependencies.
         Args:
-            code(string): 可独立运行的 Python 代码。
-            description(string): (可选) 代码功能描述。
+            code(string): Independently runnable Python code.
+            description(string): (Optional) Code function description.
         '''
         logger.info(f"角色{event.role}")
         if event.role != "admin":
             await event.send(MessageChain().message("❌ 你没有权限使用此功能！"))
-            return "用户不是管理员，无权限运行代码，请告诉他不要使用此功能"
+            return "❌ 权限验证失败：用户不是管理员，无权限运行代码。请联系管理员获取权限。操作已终止，无需重复尝试。"
         logger.info(f"收到任务: {description or '无描述'}")
         logger.debug(f"代码内容:\n{code}")
         
@@ -188,7 +192,7 @@ class CodeExecutorPlugin(Star):
                 await event.send(MessageChain().message(text_response))
 
                 # 构建返回给LLM的详细信息
-                llm_context_parts = ["✅ 代码执行成功！"]
+                llm_context_parts = ["✅ 代码执行成功！任务已完全完成，无需再次执行。文件发送通过将路径添加到FILES_TO_SEND列表实现，一旦添加，文件将被自动处理和发送。"]
                 
                 # 添加执行输出到LLM上下文
                 if result["output"] and result["output"].strip():
@@ -203,7 +207,7 @@ class CodeExecutorPlugin(Star):
                         if not os.path.exists(file_path) or not os.path.isfile(file_path):
                             logger.warning(f"文件不存在或是个目录，跳过发送: {file_path}")
                             await event.send(MessageChain().message(
-                                f"🤔 警告: AI请求发送的文件不存在: {os.path.basename(file_path)}"))
+                                f"⚠️ 文件发送跳过: {os.path.basename(file_path)} (文件不存在)"))
                             continue
                         try:
                             file_name = os.path.basename(file_path)
@@ -213,7 +217,7 @@ class CodeExecutorPlugin(Star):
                                 # 使用Lagrange API上传文件
                                 success = await self._upload_file_via_lagrange(file_path, event)
                                 if success:
-                                    sent_files.append(f"📄 已通过Lagrange发送文件: {file_name}")
+                                    sent_files.append(f"📄 已通过Lagrange发送文件: {file_name} - 发送成功，任务完成。")
                                 else:
                                     sent_files.append(f"❌ Lagrange发送失败: {file_name}")
                             else:
@@ -223,16 +227,16 @@ class CodeExecutorPlugin(Star):
                                 if is_image:
                                     logger.info(f"正在以图片形式发送: {file_path}")
                                     await event.send(MessageChain().file_image(file_path))
-                                    sent_files.append(f"📷 已发送图片: {file_name}")
+                                    sent_files.append(f"📷 已发送图片: {file_name} - 发送成功，任务完成。")
                                 else:
                                     logger.info(f"正在以文件形式发送: {file_path}")
                                     await event.send(MessageChain().message(f"📄 正在发送文件: {file_name}"))
                                     chain = [Comp.File(file=file_path, name=file_name)]
                                     await event.send(event.chain_result(chain))
-                                    sent_files.append(f"📄 已发送文件: {file_name}")
+                                    sent_files.append(f"📄 已发送文件: {file_name} - 发送成功，任务完成。")
                         except Exception as e:
                             logger.error(f"发送文件/图片 {file_path} 失败: {e}", exc_info=True)
-                            await event.send(MessageChain().message(f"❌ 发送文件 {os.path.basename(file_path)} 失败"))
+                            await event.send(MessageChain().message(f"❌ 文件发送失败: {os.path.basename(file_path)}"))
                             sent_files.append(f"❌ 发送失败: {os.path.basename(file_path)}")
                 
                 # 添加文件发送信息到LLM上下文
@@ -259,14 +263,17 @@ class CodeExecutorPlugin(Star):
                     logger.error(f"记录执行历史失败: {db_error}", exc_info=True)
                 
                 if not (result["output"] and result["output"].strip()) and not result["file_paths"]:
-                    return "代码执行完成，但无文件、图片或文本输出。"
+                    return "✅ 代码执行完成，但无文件、图片或文本输出或者文件操作未添加到FILES_TO_SEND列表。任务已完全完成，无需再次执行或重复调用。"
+                
+                # 在返回内容末尾明确标记任务完成
+                llm_context += "\n\n🎯 任务执行完毕，所有操作（包括文件发送）已成功完成。请停止进一步执行或调用此函数，避免重复。"
                 return llm_context
 
             else:
                 error_msg = f"❌ 代码执行失败！\n错误信息：\n```\n{result['error']}\n```"
                 if result.get("output"):
                     error_msg += f"\n\n出错前输出：\n```\n{result['output']}\n```"
-                error_msg += "\n请分析错误信息，修正代码或调整逻辑后重试。"
+                error_msg += "\n💡 建议：请检查代码逻辑和语法，修正后可重新尝试执行。"
                 await event.send(MessageChain().message(error_msg))
                 
                 # 记录失败执行到数据库
@@ -291,7 +298,7 @@ class CodeExecutorPlugin(Star):
         except Exception as e:
             logger.error(f"插件内部错误: {str(e)}", exc_info=True)
             execution_time = time.time() - start_time
-            error_msg = f"🔥 插件内部错误：{str(e)}\n请检查插件配置或环境后重试。"
+            error_msg = f"🔥 插件内部错误：{str(e)}\n💡 建议：请检查插件配置或环境设置。"
             await event.send(MessageChain().message(error_msg))
             
             # 记录插件内部错误到数据库
