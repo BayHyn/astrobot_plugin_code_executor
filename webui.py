@@ -309,8 +309,8 @@ class CodeExecutorWebUI:
             font-size: 0.9em;
             overflow-x: auto;
             white-space: pre-wrap;
-            max-height: 200px;
-            overflow-y: auto;
+            max-height: none;
+            overflow-y: visible;
         }
         
         .pagination {
@@ -445,7 +445,7 @@ class CodeExecutorWebUI:
             white-space: pre-wrap;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
             font-size: 0.9em;
-            max-height: 300px;
+            max-height: 500px;
             overflow-y: auto;
         }
         
