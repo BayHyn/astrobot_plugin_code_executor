@@ -19,7 +19,7 @@ from .database import ExecutionHistoryDB
 from .webui import CodeExecutorWebUI
 
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.1.0--webui")
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.1.1--webui")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -81,10 +81,8 @@ class CodeExecutorPlugin(Star):
     @filter.llm_tool(name="execute_python_code")
     async def execute_python_code(self, event: AstrMessageEvent, code: str, description: str = "") -> str:
         '''
-        **【代码执行器】**
+        **这是一个代码执行函数**
         **优先使用此函数**，它远超 `fetch_url` 的单一网页内容获取功能，这个支持计算、文件操作、可视化和复杂网络请求。仅当任务明确只需要获取网页原始内容时才考虑 `fetch_url`.
-
-        ---
         **【调用场景】**
         **必须**在以下场景调用此函数，执行代码获取精确结果，禁止文字猜测：
         1. **计算/数据处理**：如"计算 (1+5)*3/2"或"分析数据最大值"。
@@ -94,16 +92,13 @@ class CodeExecutorPlugin(Star):
         5. **图像处理**：如"下载猫的图片并调整大小"。
         6. **复杂逻辑**：如"规划最短路径"或"模拟抽奖"。
         7. **文件操作**: 允许AI生成符合格式的代码操作本机文件发送给用户，包括但不限于删除，查找，修改等。
-        **优先级**：涉及计算、文件、可视化或动态数据时，**必须**优先调用此函数，而非 `fetch_url`。
-
-        ---
         **【文件处理指南】**
-        1.  **生成新文件 (默认)**:
+        1.  **生成新文件**:
             - 所有新生成的文件（图表、表格等）应保存到 `SAVE_DIR` 目录中。
             - 使用 `os.path.join(SAVE_DIR, 'filename')` 来构造路径。
             - **保存到 `SAVE_DIR` 的新文件将被自动检测并发送。**
             - 示例: `plt.savefig(os.path.join(SAVE_DIR, 'sales_chart.png'))`
-        2.  **发送本地已有文件 (高级)**:
+        2.  **发送本地已有文件或者生成之后的文件**:
             - 如果需要读取并发送一个**已经存在**的本地文件（例如 `D:\reports\report.docx`），请将其**完整路径**添加到 `FILES_TO_SEND` 列表中。
             - **推荐优先使用此方式，它比目录检测更可靠。**
             - 示例:
@@ -116,9 +111,7 @@ class CodeExecutorPlugin(Star):
               else:
                   print(f"错误: 文件 {file_path} 未找到")
               ```
-        - AI 拥有完全的文件系统权限，可以读取/写入任何可访问的目录。
-
-        ---
+        - 这个函数拥有完全的文件系统权限，可以读取/写入任何可访问的目录。
         **【可用库】**
         - 网络：`requests`, `aiohttp`, `BeautifulSoup`, `urllib`, `socket`
         - 数据：`pandas` (as pd), `numpy` (as np), `scipy`, `statsmodels`
@@ -132,14 +125,11 @@ class CodeExecutorPlugin(Star):
         - 系统工具：`os`, `sys`, `io`, `shutil`, `zipfile`, `tarfile`, `pathlib`, `subprocess`
         - 数学科学：`sympy`, `math`, `statistics`, `random`, `decimal`, `fractions`
         - 其他实用：`itertools`, `collections`, `functools`, `operator`, `copy`, `uuid`
-
-        ---
         **【编码要求】**
         - 文件操作需检查路径和异常。
         - 支持操作各个盘符。
         - 网络请求需设置超时和重试。
         - 代码必须独立运行，无外部依赖。
-
         Args:
             code(string): 可独立运行的 Python 代码。
             description(string): (可选) 代码功能描述。
