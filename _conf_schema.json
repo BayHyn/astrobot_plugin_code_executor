@@ -28,6 +28,18 @@
       "type": "int",
       "default": 22334,
       "hint": "设置历史记录WebUI的访问端口，建议使用冷门端口避免冲突"
+    },
+    "enable_lagrange_adapter": {
+      "description": "启用Lagrange适配器",
+      "type": "bool",
+      "default": false,
+      "hint": "启用后将使用Lagrange API上传文件，而非AstrBot自带的文件上传方法"
+    },
+    "lagrange_api_port": {
+      "description": "Lagrange API端口",
+      "type": "int",
+      "default": 8083,
+      "hint": "Lagrange API服务的端口号，默认为8083"
     }
   }
   

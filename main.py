@@ -6,6 +6,7 @@ import traceback
 import os
 from datetime import datetime
 from typing import Dict, Any, List
+import requests
 
 from astrbot.api.event import filter, AstrMessageEvent, MessageChain
 from astrbot.api.star import Context, Star, register, StarTools
@@ -19,7 +20,7 @@ from .database import ExecutionHistoryDB
 from .webui import CodeExecutorWebUI
 
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.1.1--webui")
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.0--webui")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -30,6 +31,8 @@ class CodeExecutorPlugin(Star):
         self.timeout_seconds = self.config.get("timeout_seconds", 90)
         self.max_output_length = self.config.get("max_output_length", 3000)
         self.webui_port = self.config.get("webui_port", 22334)
+        self.enable_lagrange_adapter = self.config.get("enable_lagrange_adapter", False)
+        self.lagrange_api_port = self.config.get("lagrange_api_port", 8083)
 
         # **[新功能]** 从配置文件读取输出目录
         configured_path = self.config.get("output_directory")
@@ -65,6 +68,47 @@ class CodeExecutorPlugin(Star):
 
         logger.info("代码执行器插件已加载！")
     
+    async def _upload_file_via_lagrange(self, file_path: str, event: AstrMessageEvent) -> bool:
+        """通过Lagrange API上传文件"""
+        try:
+            file_name = os.path.basename(file_path)
+            
+            # 检查是否为私聊
+            is_private = event.is_private_chat() if hasattr(event, 'is_private_chat') else False
+            
+            if is_private:
+                # 私聊文件上传
+                url = f"http://localhost:{self.lagrange_api_port}/upload_private_file"
+                data = {
+                    "user_id": event.get_sender_id(),
+                    "file": file_path,
+                    "name": file_name
+                }
+            else:
+                # 群文件上传
+                url = f"http://localhost:{self.lagrange_api_port}/upload_group_file"
+                data = {
+                    "group_id": event.get_group_id() if hasattr(event, 'get_group_id') else 0,
+                    "file": file_path,
+                    "name": file_name,
+                    "folder": "/"
+                }
+            
+            response = requests.post(url, json=data, timeout=30)
+            response.raise_for_status()
+            
+            result = response.json()
+            if result.get("status") == "ok" and result.get("retcode") == 0:
+                logger.info(f"Lagrange文件上传成功: {file_name}")
+                return True
+            else:
+                logger.error(f"Lagrange文件上传失败: {result}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Lagrange文件上传异常: {e}", exc_info=True)
+            return False
+    
     async def _async_init(self):
         """异步初始化数据库和WebUI"""
         try:
@@ -92,39 +136,21 @@ class CodeExecutorPlugin(Star):
         5. **图像处理**：如"下载猫的图片并调整大小"。
         6. **复杂逻辑**：如"规划最短路径"或"模拟抽奖"。
         7. **文件操作**: 允许AI生成符合格式的代码操作本机文件发送给用户，包括但不限于删除，查找，修改等。
-        **【文件处理指南】**
-        1.  **生成新文件**:
-            - 所有新生成的文件（图表、表格等）应保存到 `SAVE_DIR` 目录中。
-            - 使用 `os.path.join(SAVE_DIR, 'filename')` 来构造路径。
-            - **保存到 `SAVE_DIR` 的新文件将被自动检测并发送。**
-            - 示例: `plt.savefig(os.path.join(SAVE_DIR, 'sales_chart.png'))`
-        2.  **发送本地已有文件或者生成之后的文件**:
-            - 如果需要读取并发送一个**已经存在**的本地文件（例如 `D:\reports\report.docx`），请将其**完整路径**添加到 `FILES_TO_SEND` 列表中。
-            - **推荐优先使用此方式，它比目录检测更可靠。**
-            - 示例:
-              ```python
-              # 发送 D 盘下的一个报告文件
-              file_path = "D:/reports/report.docx"
-              if os.path.exists(file_path):
-                  FILES_TO_SEND.append(file_path)
-                  print(f"已准备发送文件: {file_path}")
-              else:
-                  print(f"错误: 文件 {file_path} 未找到")
-              ```
+        **【文件处理规则 - 必须严格遵守】**
+        1. **新建文件**: 必须保存到 `SAVE_DIR` 目录，使用 `os.path.join(SAVE_DIR, 'filename')`
+        2. **发送文件**: 必须将完整文件路径添加到 `FILES_TO_SEND` 列表
+        
+        **示例**:
+        ```python
+        # 生成新文件
+        plt.savefig(os.path.join(SAVE_DIR, 'chart.png'))
+        
+        # 发送已有文件
+        FILES_TO_SEND.append("D:/data/report.xlsx")
+        ```
         - 这个函数拥有完全的文件系统权限，可以读取/写入任何可访问的目录。
         **【可用库】**
-        - 网络：`requests`, `aiohttp`, `BeautifulSoup`, `urllib`, `socket`
-        - 数据：`pandas` (as pd), `numpy` (as np), `scipy`, `statsmodels`
-        - 文件：`openpyxl`, `python-docx`, `fpdf2`, `json`, `yaml`, `csv`, `sqlite3`, `pickle`
-        - 图表：`matplotlib.pyplot` (as plt), `seaborn` (as sns), `plotly`, `bokeh`
-        - 图像：`PIL.Image`, `PIL`, `cv2` (OpenCV), `imageio`
-        - 数据库：`sqlite3`, `pymongo`, `sqlalchemy`, `psycopg2`
-        - 时间处理：`datetime`, `time`, `calendar`, `dateutil`
-        - 加密安全：`hashlib`, `hmac`, `secrets`, `base64`, `cryptography`
-        - 文本处理：`re`, `string`, `textwrap`, `difflib`, `nltk`, `jieba`
-        - 系统工具：`os`, `sys`, `io`, `shutil`, `zipfile`, `tarfile`, `pathlib`, `subprocess`
-        - 数学科学：`sympy`, `math`, `statistics`, `random`, `decimal`, `fractions`
-        - 其他实用：`itertools`, `collections`, `functools`, `operator`, `copy`, `uuid`
+        几乎常用库都能支持，请放心写代码执行
         **【编码要求】**
         - 文件操作需检查路径和异常。
         - 支持操作各个盘符。
@@ -181,18 +207,29 @@ class CodeExecutorPlugin(Star):
                             continue
                         try:
                             file_name = os.path.basename(file_path)
-                            is_image = any(
-                                file_name.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])
-                            if is_image:
-                                logger.info(f"正在以图片形式发送: {file_path}")
-                                await event.send(MessageChain().file_image(file_path))
-                                sent_files.append(f"📷 已发送图片: {file_name}")
+                            
+                            # 根据配置选择文件发送方式
+                            if self.enable_lagrange_adapter:
+                                # 使用Lagrange API上传文件
+                                success = await self._upload_file_via_lagrange(file_path, event)
+                                if success:
+                                    sent_files.append(f"📄 已通过Lagrange发送文件: {file_name}")
+                                else:
+                                    sent_files.append(f"❌ Lagrange发送失败: {file_name}")
                             else:
-                                logger.info(f"正在以文件形式发送: {file_path}")
-                                await event.send(MessageChain().message(f"📄 正在发送文件: {file_name}"))
-                                chain = [Comp.File(file=file_path, name=file_name)]
-                                await event.send(event.chain_result(chain))
-                                sent_files.append(f"📄 已发送文件: {file_name}")
+                                # 使用AstrBot原生方法发送文件
+                                is_image = any(
+                                    file_name.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])
+                                if is_image:
+                                    logger.info(f"正在以图片形式发送: {file_path}")
+                                    await event.send(MessageChain().file_image(file_path))
+                                    sent_files.append(f"📷 已发送图片: {file_name}")
+                                else:
+                                    logger.info(f"正在以文件形式发送: {file_path}")
+                                    await event.send(MessageChain().message(f"📄 正在发送文件: {file_name}"))
+                                    chain = [Comp.File(file=file_path, name=file_name)]
+                                    await event.send(event.chain_result(chain))
+                                    sent_files.append(f"📄 已发送文件: {file_name}")
                         except Exception as e:
                             logger.error(f"发送文件/图片 {file_path} 失败: {e}", exc_info=True)
                             await event.send(MessageChain().message(f"❌ 发送文件 {os.path.basename(file_path)} 失败"))
@@ -380,6 +417,15 @@ class CodeExecutorPlugin(Star):
                     pass
                 # 机器学习库导入已移除
 
+                # 确保代码字符串使用正确的编码
+                if isinstance(code_to_run, str):
+                    # 处理可能的编码问题
+                    try:
+                        code_to_run.encode('utf-8')
+                    except UnicodeEncodeError:
+                        # 如果包含无法编码的字符，尝试清理
+                        code_to_run = code_to_run.encode('utf-8', errors='ignore').decode('utf-8')
+                
                 exec(code_to_run, exec_globals)
 
                 if 'plt' in exec_globals and plt.get_fignums():
@@ -405,14 +451,33 @@ class CodeExecutorPlugin(Star):
                     newly_generated_filenames = files_after - files_before
                     all_files_to_send = [os.path.join(file_output_dir, f) for f in newly_generated_filenames]
 
+                # 安全处理输出内容的编码
+                output_content = output_buffer.getvalue()
+                try:
+                    # 确保输出内容可以正确编码
+                    output_content.encode('utf-8')
+                except UnicodeEncodeError:
+                    # 如果输出包含无法编码的字符，进行清理
+                    output_content = output_content.encode('utf-8', errors='ignore').decode('utf-8')
+                
                 return {
-                    "success": True, "output": output_buffer.getvalue(), "error": None,
+                    "success": True, "output": output_content, "error": None,
                     "file_paths": all_files_to_send
                 }
             except Exception:
                 tb_str = traceback.format_exc()
                 logger.error(f"代码执行出错:\n{tb_str}")
-                return {"success": False, "error": tb_str, "output": output_buffer.getvalue(), "file_paths": []}
+                
+                # 安全处理错误输出的编码
+                error_output = output_buffer.getvalue()
+                try:
+                    error_output.encode('utf-8')
+                    tb_str.encode('utf-8')
+                except UnicodeEncodeError:
+                    error_output = error_output.encode('utf-8', errors='ignore').decode('utf-8')
+                    tb_str = tb_str.encode('utf-8', errors='ignore').decode('utf-8')
+                
+                return {"success": False, "error": tb_str, "output": error_output, "file_paths": []}
             finally:
                 sys.stdout, sys.stderr = old_stdout, old_stderr
                 try:

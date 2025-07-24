@@ -1,6 +1,6 @@
 # AstrBot代码执行器插件 (Super Code Executor) - 全能小狐狸汐林
 
-![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg) ![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg) ![Plugin Version](https://img.shields.io/badge/version-2.1.1--webui-brightgreen) ![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg) ![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg) ![Plugin Version](https://img.shields.io/badge/version-2.2.0--webui-brightgreen) ![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
 
 ⚠️⚠️⚠️ **安全警告** ⚠️⚠️⚠️
 
@@ -93,7 +93,9 @@ pip install fastapi uvicorn[standard] jinja2 aiosqlite
   "max_output_length": 3000,
   "enable_plots": true,
   "output_directory": "D:/ai_outputs",
-  "webui_port": 22334
+  "webui_port": 22334,
+  "enable_lagrange_adapter": false,
+  "lagrange_api_port": 8083
 }
 ```
 
@@ -102,8 +104,22 @@ pip install fastapi uvicorn[standard] jinja2 aiosqlite
 - `enable_plots`：是否启用图表生成
 - `output_directory`：默认工作目录
 - `webui_port`：WebUI服务端口（可自定义，避免端口冲突）
+- `enable_lagrange_adapter`：启用Lagrange适配器（默认关闭）
+- `lagrange_api_port`：Lagrange API服务端口（默认8083）
 
 **部分行为可通过源码 `__init__` 方法调整。**
+
+## Lagrange适配器配置
+
+当使用Lagrange作为机器人框架时，可启用Lagrange适配器来优化文件上传功能：
+
+1. 设置 `enable_lagrange_adapter` 为 `true`
+2. 确保Lagrange API服务运行在指定端口（默认8083）
+3. 插件将自动根据聊天类型选择合适的上传接口：
+   - **私聊**：调用 `/upload_private_file` 接口
+   - **群聊**：调用 `/upload_group_file` 接口
+
+**注意**：Lagrange适配器仅在启用时生效，默认情况下使用AstrBot原生文件发送方式。
 
 ---
 
@@ -223,6 +239,14 @@ CREATE TABLE execution_history (
 
 ---
 
-**版本**: 2.0.0--enhanced  
+**版本**: 2.2.0--webui  
 **作者**: Xican  
-**更新日期**: 2025年7月22日
+**更新日期**: 2025年7月24日
+
+## 更新日志
+
+### v2.2.0--webui (2025-01-22)
+- 新增Lagrange适配器支持
+- 支持通过Lagrange API上传私聊和群聊文件
+- 新增配置项：`enable_lagrange_adapter` 和 `lagrange_api_port`
+- 优化文件上传逻辑，支持多种机器人框架
