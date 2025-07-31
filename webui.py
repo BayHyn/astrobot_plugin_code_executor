@@ -1,6 +1,6 @@
 import asyncio
 from fastapi import FastAPI, Request, Query, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import uvicorn
@@ -14,9 +14,11 @@ from astrbot.api import logger
 class CodeExecutorWebUI:
     """代码执行器WebUI服务"""
     
-    def __init__(self, db: ExecutionHistoryDB, port: int = 22334):
+    def __init__(self, db: ExecutionHistoryDB, port: int = 22334, file_output_dir: str = None, enable_file_serving: bool = False):
         self.db = db
         self.port = port
+        self.file_output_dir = file_output_dir
+        self.enable_file_serving = enable_file_serving
         self.app = FastAPI(title="代码执行器历史记录", description="查看AI代码执行历史记录")
         self.server = None
         self.setup_routes()
@@ -74,6 +76,29 @@ class CodeExecutorWebUI:
             except Exception as e:
                 logger.error(f"获取统计信息失败: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
+        
+        # 文件服务路由（用于本地路由发送）
+        if self.enable_file_serving and self.file_output_dir:
+            @self.app.get("/files/{file_name}")
+            async def serve_file(file_name: str):
+                """提供文件下载服务"""
+                try:
+                    file_path = os.path.join(self.file_output_dir, file_name)
+                    if not os.path.exists(file_path) or not os.path.isfile(file_path):
+                        raise HTTPException(status_code=404, detail="文件不存在")
+                    
+                    # 安全检查：确保文件在指定目录内
+                    real_file_path = os.path.realpath(file_path)
+                    real_output_dir = os.path.realpath(self.file_output_dir)
+                    if not real_file_path.startswith(real_output_dir):
+                        raise HTTPException(status_code=403, detail="访问被拒绝")
+                    
+                    return FileResponse(file_path, filename=file_name)
+                except HTTPException:
+                    raise
+                except Exception as e:
+                    logger.error(f"文件服务失败: {e}", exc_info=True)
+                    raise HTTPException(status_code=500, detail=str(e))
     
     def get_index_html(self) -> str:
         """获取主页HTML"""

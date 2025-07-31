@@ -33,6 +33,9 @@ class CodeExecutorPlugin(Star):
         self.webui_port = self.config.get("webui_port", 22334)
         self.enable_lagrange_adapter = self.config.get("enable_lagrange_adapter", False)
         self.lagrange_api_port = self.config.get("lagrange_api_port", 8083)
+        self.enable_local_route_sending = self.config.get("enable_local_route_sending", False)
+        self.lagrange_host = self.config.get("lagrange_host", "127.0.0.1")
+        self.local_route_host = self.config.get("local_route_host", "localhost")
 
         # **[新功能]** 从配置文件读取输出目录
         configured_path = self.config.get("output_directory")
@@ -60,7 +63,12 @@ class CodeExecutorPlugin(Star):
         self.db = ExecutionHistoryDB(db_path)
         
         # 初始化WebUI
-        self.webui = CodeExecutorWebUI(self.db, self.webui_port)
+        self.webui = CodeExecutorWebUI(
+            self.db, 
+            self.webui_port, 
+            self.file_output_dir, 
+            self.enable_local_route_sending
+        )
         self.webui_task = None
         
         # 异步初始化数据库和启动WebUI
@@ -78,7 +86,7 @@ class CodeExecutorPlugin(Star):
             
             if is_private:
                 # 私聊文件上传
-                url = f"http://localhost:{self.lagrange_api_port}/upload_private_file"
+                url = f"http://{self.lagrange_host}:{self.lagrange_api_port}/upload_private_file"
                 data = {
                     "user_id": event.get_sender_id(),
                     "file": file_path,
@@ -86,7 +94,7 @@ class CodeExecutorPlugin(Star):
                 }
             else:
                 # 群文件上传
-                url = f"http://localhost:{self.lagrange_api_port}/upload_group_file"
+                url = f"http://{self.lagrange_host}:{self.lagrange_api_port}/upload_group_file"
                 data = {
                     "group_id": event.get_group_id() if hasattr(event, 'get_group_id') else 0,
                     "file": file_path,
@@ -109,6 +117,41 @@ class CodeExecutorPlugin(Star):
             logger.error(f"Lagrange文件上传异常: {e}", exc_info=True)
             return False
     
+    async def _send_file_via_local_route(self, file_path: str, event: AstrMessageEvent) -> bool:
+        """通过本地路由发送文件"""
+        try:
+            file_name = os.path.basename(file_path)
+            
+            # 安全检查：确保文件在输出目录内
+            real_file_path = os.path.realpath(file_path)
+            real_output_dir = os.path.realpath(self.file_output_dir)
+            if not real_file_path.startswith(real_output_dir):
+                logger.warning(f"文件不在输出目录内，跳过本地路由发送: {file_path}")
+                return False
+            
+            # 构建文件访问URL
+            file_url = f"http://{self.local_route_host}:{self.webui_port}/files/{file_name}"
+            
+            # 使用AstrBot原生方法发送文件URL
+            is_image = any(
+                file_name.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])
+            
+            if is_image:
+                logger.info(f"正在以图片URL形式发送: {file_url}")
+                await event.send(MessageChain().file_image(file_url))
+            else:
+                logger.info(f"正在以文件URL形式发送: {file_url}")
+                await event.send(MessageChain().message(f"📄 正在发送文件: {file_name}"))
+                chain = [Comp.File(file=file_url, name=file_name)]
+                await event.send(event.chain_result(chain))
+            
+            logger.info(f"本地路由文件发送成功: {file_name} -> {file_url}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"本地路由文件发送异常: {e}", exc_info=True)
+            return False
+    
     async def _async_init(self):
         """异步初始化数据库和WebUI"""
         try:
@@ -118,6 +161,14 @@ class CodeExecutorPlugin(Star):
             # 启动WebUI服务器
             self.webui_task = asyncio.create_task(self.webui.start_server())
             logger.info(f"WebUI服务已启动，访问地址: http://localhost:{self.webui_port}")
+            
+            # 记录文件发送配置状态
+            if self.enable_local_route_sending:
+                logger.info(f"本地路由发送已启用，文件服务地址: http://{self.local_route_host}:{self.webui_port}/files/")
+            if self.enable_lagrange_adapter:
+                logger.info(f"Lagrange适配器已启用，服务地址: {self.lagrange_host}:{self.lagrange_api_port}")
+            if not self.enable_local_route_sending and not self.enable_lagrange_adapter:
+                logger.info("使用AstrBot原生文件发送方式")
         except Exception as e:
             logger.error(f"异步初始化失败: {e}", exc_info=True)
 
@@ -212,16 +263,29 @@ class CodeExecutorPlugin(Star):
                         try:
                             file_name = os.path.basename(file_path)
                             
-                            # 根据配置选择文件发送方式
-                            if self.enable_lagrange_adapter:
-                                # 使用Lagrange API上传文件
+                            # 根据配置选择文件发送方式（优先级：本地路由 > Lagrange > AstrBot原生）
+                            success = False
+                            
+                            if self.enable_local_route_sending:
+                                # 使用本地路由发送文件
+                                success = await self._send_file_via_local_route(file_path, event)
+                                if success:
+                                    sent_files.append(f"📄 已通过本地路由发送文件: {file_name} - 发送成功，任务完成。")
+                                else:
+                                    sent_files.append(f"❌ 本地路由发送失败: {file_name}")
+                                    logger.warning(f"本地路由发送失败，尝试其他发送方式: {file_name}")
+                            
+                            # 如果本地路由发送失败或未启用，尝试Lagrange
+                            if not success and self.enable_lagrange_adapter:
                                 success = await self._upload_file_via_lagrange(file_path, event)
                                 if success:
                                     sent_files.append(f"📄 已通过Lagrange发送文件: {file_name} - 发送成功，任务完成。")
                                 else:
                                     sent_files.append(f"❌ Lagrange发送失败: {file_name}")
-                            else:
-                                # 使用AstrBot原生方法发送文件
+                                    logger.warning(f"Lagrange发送失败，尝试AstrBot原生方式: {file_name}")
+                            
+                            # 如果前面的方式都失败或未启用，使用AstrBot原生方法发送文件
+                            if not success:
                                 is_image = any(
                                     file_name.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])
                                 if is_image:
