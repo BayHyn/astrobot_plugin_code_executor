@@ -4,6 +4,7 @@ import io
 import time
 import traceback
 import os
+import base64
 from datetime import datetime
 from typing import Dict, Any, List
 import requests
@@ -20,7 +21,7 @@ from .database import ExecutionHistoryDB
 from .webui import CodeExecutorWebUI
 
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.0--webui")
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.2--refix")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -30,7 +31,8 @@ class CodeExecutorPlugin(Star):
         # 优先从配置文件读取配置，否则使用默认值
         self.timeout_seconds = self.config.get("timeout_seconds", 90)
         self.max_output_length = self.config.get("max_output_length", 3000)
-        self.webui_port = self.config.get("webui_port", 22334)
+        self.enable_webui = self.config.get("enable_webui", False)
+        self.webui_port = self.config.get("webui_port", 10000)
         self.enable_lagrange_adapter = self.config.get("enable_lagrange_adapter", False)
         self.lagrange_api_port = self.config.get("lagrange_api_port", 8083)
         self.enable_local_route_sending = self.config.get("enable_local_route_sending", False)
@@ -62,13 +64,16 @@ class CodeExecutorPlugin(Star):
         db_path = os.path.join(plugin_data_dir, 'execution_history.db')
         self.db = ExecutionHistoryDB(db_path)
         
-        # 初始化WebUI
-        self.webui = CodeExecutorWebUI(
-            self.db, 
-            self.webui_port, 
-            self.file_output_dir, 
-            self.enable_local_route_sending
-        )
+        # 只有启用WebUI时才初始化
+        if self.enable_webui:
+            self.webui = CodeExecutorWebUI(
+                self.db, 
+                self.webui_port, 
+                self.file_output_dir, 
+                self.enable_local_route_sending
+            )
+        else:
+            self.webui = None
         self.webui_task = None
         
         # 异步初始化数据库和启动WebUI
@@ -120,6 +125,11 @@ class CodeExecutorPlugin(Star):
     async def _send_file_via_local_route(self, file_path: str, event: AstrMessageEvent) -> bool:
         """通过本地路由发送文件"""
         try:
+            # 检查WebUI是否启用
+            if not self.enable_webui or not self.webui:
+                logger.warning("WebUI未启用，无法使用本地路由发送文件")
+                return False
+                
             file_name = os.path.basename(file_path)
             
             # 安全检查：确保文件在输出目录内
@@ -129,8 +139,9 @@ class CodeExecutorPlugin(Star):
                 logger.warning(f"文件不在输出目录内，跳过本地路由发送: {file_path}")
                 return False
             
-            # 构建文件访问URL
-            file_url = f"http://{self.local_route_host}:{self.webui_port}/files/{file_name}"
+            # 构建文件URL（使用实际端口）
+            actual_port = self.webui.port
+            file_url = f"http://{self.local_route_host}:{actual_port}/files/{file_name}"
             
             # 使用AstrBot原生方法发送文件URL
             is_image = any(
@@ -152,19 +163,64 @@ class CodeExecutorPlugin(Star):
             logger.error(f"本地路由文件发送异常: {e}", exc_info=True)
             return False
     
+    async def _send_file_via_base64(self, file_path: str, event: AstrMessageEvent) -> bool:
+        """通过base64编码发送文件"""
+        try:
+            file_name = os.path.basename(file_path)
+            file_size = os.path.getsize(file_path)
+            
+            # 文件大小限制：5MB (考虑base64编码会增加约33%大小)
+            max_size = 5 * 1024 * 1024  # 5MB
+            if file_size > max_size:
+                logger.warning(f"文件过大，跳过base64发送: {file_name} ({file_size / 1024 / 1024:.2f}MB > {max_size / 1024 / 1024}MB)")
+                return False
+            
+            # 读取文件并编码为base64
+            with open(file_path, 'rb') as f:
+                file_data = f.read()
+            
+            base64_data = base64.b64encode(file_data).decode('utf-8')
+            
+            # 检测文件类型
+            is_image = any(
+                file_name.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp'])
+            
+            if is_image:
+                logger.info(f"正在以base64图片形式发送: {file_name} ({file_size / 1024:.1f}KB)")
+                await event.send(MessageChain().file_image(f"data:image/{file_name.split('.')[-1]};base64,{base64_data}"))
+            else:
+                logger.info(f"正在以base64文件形式发送: {file_name} ({file_size / 1024:.1f}KB)")
+                await event.send(MessageChain().message(f"📄 正在发送文件: {file_name}"))
+                chain = [Comp.File(file=f"data:application/octet-stream;base64,{base64_data}", name=file_name)]
+                await event.send(event.chain_result(chain))
+            
+            logger.info(f"base64文件发送成功: {file_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"base64文件发送异常: {e}", exc_info=True)
+            return False
+    
     async def _async_init(self):
         """异步初始化数据库和WebUI"""
         try:
             # 初始化数据库
             await self.db.init_database()
             
-            # 启动WebUI服务器
-            self.webui_task = asyncio.create_task(self.webui.start_server())
-            logger.info(f"WebUI服务已启动，访问地址: http://localhost:{self.webui_port}")
+            # 只有启用WebUI时才启动WebUI服务器
+            if self.enable_webui and self.webui:
+                self.webui_task = asyncio.create_task(self.webui.start_server())
+                # 等待一小段时间确保端口分配完成
+                await asyncio.sleep(0.1)
+                actual_port = self.webui.port
+                logger.info(f"WebUI服务已启动，访问地址: http://localhost:{actual_port}")
+                
+                # 记录文件发送配置状态
+                if self.enable_local_route_sending:
+                    logger.info(f"本地路由发送已启用，文件服务地址: http://{self.local_route_host}:{actual_port}/files/")
+            else:
+                logger.info("WebUI已禁用")
             
-            # 记录文件发送配置状态
-            if self.enable_local_route_sending:
-                logger.info(f"本地路由发送已启用，文件服务地址: http://{self.local_route_host}:{self.webui_port}/files/")
             if self.enable_lagrange_adapter:
                 logger.info(f"Lagrange适配器已启用，服务地址: {self.lagrange_host}:{self.lagrange_api_port}")
             if not self.enable_local_route_sending and not self.enable_lagrange_adapter:
@@ -266,7 +322,7 @@ class CodeExecutorPlugin(Star):
                             # 根据配置选择文件发送方式（优先级：本地路由 > Lagrange > AstrBot原生）
                             success = False
                             
-                            if self.enable_local_route_sending:
+                            if self.enable_local_route_sending and self.enable_webui and self.webui:
                                 # 使用本地路由发送文件
                                 success = await self._send_file_via_local_route(file_path, event)
                                 if success:
@@ -292,12 +348,24 @@ class CodeExecutorPlugin(Star):
                                     logger.info(f"正在以图片形式发送: {file_path}")
                                     await event.send(MessageChain().file_image(file_path))
                                     sent_files.append(f"📷 已发送图片: {file_name} - 发送成功，任务完成。")
+                                    success = True
                                 else:
                                     logger.info(f"正在以文件形式发送: {file_path}")
                                     await event.send(MessageChain().message(f"📄 正在发送文件: {file_name}"))
                                     chain = [Comp.File(file=file_path, name=file_name)]
                                     await event.send(event.chain_result(chain))
                                     sent_files.append(f"📄 已发送文件: {file_name} - 发送成功，任务完成。")
+                                    success = True
+                            
+                            # 如果所有方式都失败，尝试base64发送作为最后的备用方案
+                            if not success:
+                                logger.warning(f"所有发送方式失败，尝试base64发送: {file_name}")
+                                base64_success = await self._send_file_via_base64(file_path, event)
+                                if base64_success:
+                                    sent_files.append(f"📦 已通过base64发送: {file_name} - 发送成功，任务完成。")
+                                else:
+                                    logger.error(f"所有发送方式均失败: {file_name}")
+                                    sent_files.append(f"❌ 所有发送方式均失败: {file_name}")
                         except Exception as e:
                             logger.error(f"发送文件/图片 {file_path} 失败: {e}", exc_info=True)
                             await event.send(MessageChain().message(f"❌ 文件发送失败: {os.path.basename(file_path)}"))
@@ -570,16 +638,24 @@ class CodeExecutorPlugin(Star):
     async def terminate(self):
         """插件卸载时的清理工作"""
         try:
-            # 停止WebUI服务器
-            if self.webui_task and not self.webui_task.done():
-                logger.info("正在停止WebUI服务器...")
-                await self.webui.stop_server()
-                self.webui_task.cancel()
+            logger.info("正在卸载代码执行器插件...")
+            
+            # 只有启用WebUI时才进行清理
+            if self.enable_webui and hasattr(self, 'webui') and self.webui:
                 try:
-                    await self.webui_task
-                except asyncio.CancelledError:
-                    pass
+                    # 取消WebUI任务
+                    if hasattr(self, 'webui_task') and self.webui_task and not self.webui_task.done():
+                        self.webui_task.cancel()
+                        logger.info("WebUI任务已取消")
+                    
+                    # 停止WebUI服务器
+                    await self.webui.stop_server()
+                    logger.info("WebUI服务器已停止")
+                    
+                except Exception as e:
+                    logger.warning(f"清理WebUI时出现问题: {e}")
             
             logger.info("代码执行器插件已卸载")
+            
         except Exception as e:
-            logger.error(f"插件卸载时发生错误: {e}", exc_info=True)
+            logger.error(f"插件卸载过程中发生错误: {e}")

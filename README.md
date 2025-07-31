@@ -241,12 +241,15 @@ CREATE TABLE execution_history (
 
 **版本**: 2.2.0--webui  
 **作者**: Xican  
-**更新日期**: 2025年7月24日
+**更新日期**: 2025年7月31日
 
 ## 更新日志
 
-### v2.2.0--webui (2025-01-22)
+### v2.2.0--webui (2025-07-22)
 - 新增Lagrange适配器支持
 - 支持通过Lagrange API上传私聊和群聊文件
 - 新增配置项：`enable_lagrange_adapter` 和 `lagrange_api_port`
 - 优化文件上传逻辑，支持多种机器人框架
+
+### v2.2.1--fix (2025-07-31)
+- 修复napcat和astrbot不在同一环境的文件发送问题

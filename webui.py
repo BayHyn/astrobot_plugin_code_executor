@@ -1,4 +1,5 @@
 import asyncio
+import socket
 from fastapi import FastAPI, Request, Query, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,7 +15,7 @@ from astrbot.api import logger
 class CodeExecutorWebUI:
     """代码执行器WebUI服务"""
     
-    def __init__(self, db: ExecutionHistoryDB, port: int = 22334, file_output_dir: str = None, enable_file_serving: bool = False):
+    def __init__(self, db: ExecutionHistoryDB, port: int = 10000, file_output_dir: str = None, enable_file_serving: bool = False):
         self.db = db
         self.port = port
         self.file_output_dir = file_output_dir
@@ -22,6 +23,23 @@ class CodeExecutorWebUI:
         self.app = FastAPI(title="代码执行器历史记录", description="查看AI代码执行历史记录")
         self.server = None
         self.setup_routes()
+    
+    def is_port_in_use(self, port: int) -> bool:
+        """检查端口是否被占用"""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(('0.0.0.0', port))
+                return False
+            except OSError:
+                return True
+    
+    def find_available_port(self, start_port: int, max_attempts: int = 10) -> int:
+        """寻找可用端口"""
+        for i in range(max_attempts):
+            test_port = start_port + i
+            if not self.is_port_in_use(test_port):
+                return test_port
+        raise OSError(f"无法在 {start_port}-{start_port + max_attempts - 1} 范围内找到可用端口")
     
     def setup_routes(self):
         """设置路由"""
@@ -841,6 +859,23 @@ class CodeExecutorWebUI:
     async def start_server(self):
         """启动WebUI服务器"""
         try:
+            # 如果服务器已经存在，先停止它
+            if self.server:
+                await self.stop_server()
+            
+            # 动态端口分配：如果配置端口被占用，自动寻找可用端口
+            original_port = self.port
+            if self.is_port_in_use(self.port):
+                logger.warning(f"配置端口 {self.port} 已被占用，正在寻找可用端口...")
+                try:
+                    available_port = self.find_available_port(self.port)
+                    self.port = available_port
+                    logger.info(f"找到可用端口: {self.port} (原配置端口: {original_port})")
+                except OSError as port_error:
+                    logger.error(f"无法找到可用端口: {port_error}")
+                    logger.info("建议：1) 重启AstrBot 2) 修改WebUI端口配置到更高的端口号")
+                    raise
+            
             config = uvicorn.Config(
                 app=self.app,
                 host="0.0.0.0",
@@ -853,8 +888,21 @@ class CodeExecutorWebUI:
             logger.info(f"WebUI服务器启动中，端口: {self.port}")
             logger.info(f"访问地址: http://localhost:{self.port}")
             
+            if self.port != original_port:
+                logger.warning(f"注意：WebUI端口已从 {original_port} 自动调整为 {self.port}")
+                logger.info("如需固定端口，请确保该端口未被占用或修改配置文件")
+            
             # 在后台运行服务器
             await self.server.serve()
+        except OSError as e:
+            if "Address already in use" in str(e) or "Only one usage of each socket address" in str(e):
+                logger.error(f"端口 {self.port} 被占用，WebUI服务器启动失败")
+                logger.info("这通常是由于插件热重载时端口未完全释放导致的")
+                self.server = None
+                raise
+            else:
+                logger.error(f"WebUI服务器启动失败: {e}", exc_info=True)
+                raise
         except Exception as e:
             logger.error(f"WebUI服务器启动失败: {e}", exc_info=True)
             raise
@@ -863,6 +911,24 @@ class CodeExecutorWebUI:
         """停止WebUI服务器"""
         if self.server:
             logger.info("正在停止WebUI服务器...")
-            self.server.should_exit = True
-            await asyncio.sleep(1)  # 给服务器一些时间来优雅关闭
-            logger.info("WebUI服务器已停止")
+            try:
+                # 设置退出标志
+                self.server.should_exit = True
+                
+                # 如果服务器正在运行，强制关闭
+                if hasattr(self.server, 'servers') and self.server.servers:
+                    for server in self.server.servers:
+                        server.close()
+                        await server.wait_closed()
+                
+                # 等待服务器完全关闭
+                await asyncio.sleep(0.5)
+                
+                # 清理服务器引用
+                self.server = None
+                
+                logger.info("WebUI服务器已停止")
+            except Exception as e:
+                logger.warning(f"停止WebUI服务器时出现异常: {e}")
+                # 强制清理
+                self.server = None
