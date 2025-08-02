@@ -202,7 +202,7 @@ class CodeExecutorPlugin(Star):
             return False
     
     def get_image_urls_from_message(self, message) -> List[str]:
-        """从消息链中获取图片URL列表"""
+        """从消息链中获取图片URL列表，包括引用消息中的图片"""
         image_urls = []
         try:
             # 打印原始消息和消息链内容
@@ -223,6 +223,23 @@ class CodeExecutorPlugin(Star):
                         image_urls.append(component.url)
                     else:
                         logger.debug(f"图片组件属性: {dir(component)}")
+                
+                # 检查是否是Reply组件，从引用消息中提取图片
+                elif isinstance(component, Comp.Reply):
+                    logger.info(f"发现Reply组件，检查引用消息中的图片")
+                    reply_chain = getattr(component, 'chain', [])
+                    if reply_chain:
+                        logger.info(f"Reply chain 包含 {len(reply_chain)} 个组件")
+                        for reply_comp in reply_chain:
+                            logger.debug(f"处理Reply chain组件类型: {type(reply_comp).__name__}")
+                            if isinstance(reply_comp, Comp.Image):
+                                if hasattr(reply_comp, 'url') and reply_comp.url:
+                                    image_urls.append(reply_comp.url)
+                                    logger.info(f"从引用消息中提取到图片URL: {reply_comp.url}")
+                                else:
+                                    logger.warning(f"引用消息中的图片组件缺少URL属性: {reply_comp}")
+                    else:
+                        logger.info(f"Reply组件的chain为空")
             
             logger.info(f"共找到 {len(image_urls)} 个图片URL")
             return image_urls
@@ -257,6 +274,63 @@ class CodeExecutorPlugin(Star):
         except Exception as e:
             logger.error(f"异步初始化失败: {e}", exc_info=True)
 
+    @filter.command("测试")
+    async def debug_message_chain(self, event: AstrMessageEvent):
+        """调试消息链结构的测试指令，参考别人的代码实现"""
+        try:
+            user_name = event.get_sender_name()
+            logger.info(f"=== 消息链调试开始 - 用户: {user_name} ===")
+            
+            # 获取消息组件（参考别人的代码）
+            message_components = event.message_obj.message
+            logger.info(f"消息组件总数: {len(message_components)}")
+            
+            # 查找Reply组件（参考别人的代码实现）
+            reply_component = None
+            for comp in message_components:
+                logger.info(f"检查组件: {type(comp).__name__}, isinstance(comp, Comp.Reply): {isinstance(comp, Comp.Reply)}")
+                if isinstance(comp, Comp.Reply):
+                    reply_component = comp
+                    logger.info(f"*** 找到Reply组件! ID: {comp.id} ***")
+                    break
+            
+            if not reply_component:
+                logger.warning("未检测到Reply组件（用户未引用消息）")
+                yield event.plain_result("未检测到引用消息")
+                return
+            
+            # 详细分析Reply组件
+            logger.info(f"Reply组件详情:")
+            logger.info(f"  - ID: {reply_component.id}")
+            logger.info(f"  - sender_id: {reply_component.sender_id}")
+            logger.info(f"  - sender_nickname: {reply_component.sender_nickname}")
+            logger.info(f"  - time: {reply_component.time}")
+            logger.info(f"  - message_str: {reply_component.message_str}")
+            logger.info(f"  - chain长度: {len(reply_component.chain)}")
+            
+            # 分析chain中的组件
+            if reply_component.chain:
+                logger.info(f"引用消息链内容:")
+                for i, quoted_comp in enumerate(reply_component.chain):
+                    logger.info(f"  组件{i+1}: {type(quoted_comp).__name__}")
+                    logger.info(f"  组件{i+1}详情: {quoted_comp}")
+                    
+                    # 特别检查图片组件
+                    if isinstance(quoted_comp, Comp.Image):
+                        logger.info(f"  *** 发现图片组件! ***")
+                        logger.info(f"  图片file: {getattr(quoted_comp, 'file', 'N/A')}")
+                        logger.info(f"  图片url: {getattr(quoted_comp, 'url', 'N/A')}")
+                        logger.info(f"  图片所有属性: {quoted_comp.__dict__}")
+            else:
+                logger.info("引用消息链为空")
+            
+            logger.info(f"=== 消息链调试结束 ===")
+            yield event.plain_result("引用消息调试完成，请查看控制台日志")
+            
+        except Exception as e:
+            logger.error(f"调试过程中出现错误: {e}", exc_info=True)
+            yield event.plain_result(f"调试失败: {e}")
+            yield event.plain_result(f"调试出错: {str(e)}")
 
     @filter.llm_tool(name="execute_python_code")
     async def execute_python_code(self, event: AstrMessageEvent, code: str, description: str = "") -> str:
