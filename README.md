@@ -1,6 +1,6 @@
 # AstrBot代码执行器插件 (Super Code Executor) - 全能小狐狸汐林
 
-![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg) ![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg) ![Plugin Version](https://img.shields.io/badge/version-2.2.0--webui-brightgreen) ![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg) ![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg) ![Plugin Version](https://img.shields.io/badge/version-2.3.0-brightgreen) ![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
 
 ⚠️⚠️⚠️ **安全警告** ⚠️⚠️⚠️
 
@@ -56,6 +56,7 @@
 - **无限制代码执行**：执行任意Python代码（限制管理员可用）。
 - **完全文件系统访问**：可在所有盘符自由创建、读取、修改、删除文件和目录。
 - **智能文件发送**：自动检测并发送新生成文件，或指定任意路径文件发送。
+- **🖼️ 图片处理功能**：自动提取消息中的图片URL，支持图片下载、处理、分析等操作。
 - **丰富预装库**：内置40+常用库，涵盖数据科学、机器学习、图像处理、数据库、可视化、NLP等。
 - **自动化图表生成**：matplotlib绘图后自动保存并发送图片。
 - **执行历史记录系统**：每次代码执行自动记录到SQLite数据库，含详细信息、性能统计、文件追踪。
@@ -154,6 +155,43 @@ else:
     print(f"错误: 文件未找到 at {file_path}")
 ```
 
+## 3. 🖼️ 图片处理功能（新增）
+
+插件会自动提取用户消息中的图片URL，并将其注入到 `img_url` 变量中供代码使用。
+
+```python
+# img_url 变量已自动注入，包含当前消息中的所有图片URL
+if img_url:
+    import requests
+    from PIL import Image
+    import io
+    
+    # 下载第一张图片
+    response = requests.get(img_url[0])
+    image = Image.open(io.BytesIO(response.content))
+    
+    # 获取图片信息
+    print(f"图片尺寸: {image.size}")
+    print(f"图片格式: {image.format}")
+    print(f"图片模式: {image.mode}")
+    
+    # 处理图片（例如：调整大小并添加滤镜）
+    resized_image = image.resize((800, 600))
+    
+    # 保存处理后的图片
+    output_path = os.path.join(SAVE_DIR, 'processed_image.jpg')
+    resized_image.save(output_path, quality=95)
+    print(f"图片处理完成，已保存到: {output_path}")
+else:
+    print("当前消息中没有图片")
+```
+
+**图片处理功能特点**：
+- 自动检测并提取消息中的图片URL
+- 支持多张图片同时处理
+- 可进行格式转换、尺寸调整、滤镜处理等操作
+- 处理后的图片自动保存并发送
+
 ---
 
 # 🗄️ 执行历史与WebUI
@@ -239,17 +277,25 @@ CREATE TABLE execution_history (
 
 ---
 
-**版本**: 2.2.0--webui  
+**版本**: 2.3.0  
 **作者**: Xican  
-**更新日期**: 2025年7月31日
+**更新日期**: 2025年8月3日
 
 ## 更新日志
+
+### v2.3.0 - 图片处理功能增强 (2025-08-03)
+- 🖼️ **新增图片处理功能**：自动提取消息中的图片URL并注入到执行环境
+- **新增方法**：`get_image_urls_from_message` 用于从消息链中提取图片URL
+- **变量注入**：在代码执行环境中自动提供 `img_url` 变量（图片URL列表）
+- **增强提示词**：为AI提供详细的图片处理使用说明和示例
+- **向后兼容**：不影响现有功能，纯增强性更新
+- **适用场景**：图片下载、格式转换、尺寸调整、滤镜处理、信息提取等
+
+### v2.2.1--fix (2025-07-31)
+- 修复napcat和astrbot不在同一环境的文件发送问题
 
 ### v2.2.0--webui (2025-07-22)
 - 新增Lagrange适配器支持
 - 支持通过Lagrange API上传私聊和群聊文件
 - 新增配置项：`enable_lagrange_adapter` 和 `lagrange_api_port`
 - 优化文件上传逻辑，支持多种机器人框架
-
-### v2.2.1--fix (2025-07-31)
-- 修复napcat和astrbot不在同一环境的文件发送问题

@@ -1,5 +1,63 @@
 # 代码执行器插件新功能说明
 
+## v2.3.0 - 图片处理功能增强 (2025年8月3日)
+
+### 🖼️ 新增图片下载和处理功能
+
+**功能概述**: 插件现在支持自动检测用户消息中的图片并提供便捷的图片处理能力。
+
+**主要特性**:
+- **自动图片URL提取**: 插件会自动从用户消息中提取所有图片的URL
+- **变量注入**: 将图片URL以 `img_url` 列表变量的形式注入到代码执行环境
+- **完整示例**: 提供详细的使用示例，AI可以直接参考实现图片下载和处理
+- **类型安全**: 明确指定 `img_url` 为列表类型，避免类型错误
+- **向后兼容**: 不影响现有功能，只是增强了图片处理能力
+
+**工作原理**:
+1. 用户发送包含图片的消息
+2. 插件自动检测并提取图片URL
+3. 将图片URL列表注入到代码执行环境的 `img_url` 变量中
+4. AI可以直接使用 `img_url` 变量进行图片下载、分析、处理等操作
+
+**使用示例**:
+```python
+# img_url 变量已自动注入，包含当前消息中的所有图片URL
+if img_url:
+    import requests
+    from PIL import Image
+    import io
+    
+    # 下载第一张图片
+    response = requests.get(img_url[0])
+    image = Image.open(io.BytesIO(response.content))
+    
+    # 处理图片（例如：调整大小）
+    resized_image = image.resize((800, 600))
+    
+    # 保存处理后的图片
+    output_path = os.path.join(SAVE_DIR, 'processed_image.jpg')
+    resized_image.save(output_path)
+    print(f"图片处理完成，已保存到: {output_path}")
+else:
+    print("当前消息中没有图片")
+```
+
+**技术实现**:
+- 新增 `get_image_urls_from_message` 方法用于提取图片URL
+- 修改 `execute_python_code` 方法的提示词，添加图片处理相关说明
+- 更新代码执行环境，自动注入 `img_url` 变量
+- 添加详细的日志记录，便于调试和监控
+
+**适用场景**:
+- 图片格式转换和压缩
+- 图片尺寸调整和裁剪
+- 图片滤镜和特效处理
+- 图片信息提取和分析
+- 批量图片处理
+- 图片合成和拼接
+
+---
+
 ## 新增配置项
 
 ### 1. 本地路由发送功能

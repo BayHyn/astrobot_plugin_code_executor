@@ -21,7 +21,7 @@ from .database import ExecutionHistoryDB
 from .webui import CodeExecutorWebUI
 
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.2--refix")
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.3--img")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -201,6 +201,35 @@ class CodeExecutorPlugin(Star):
             logger.error(f"base64文件发送异常: {e}", exc_info=True)
             return False
     
+    def get_image_urls_from_message(self, message) -> List[str]:
+        """从消息链中获取图片URL列表"""
+        image_urls = []
+        try:
+            # 打印原始消息和消息链内容
+            logger.debug(f"原始消息: {message}")
+            logger.debug(f"消息链内容: {message}")
+
+            # 遍历消息链
+            for component in message:
+                # 打印每个组件的类型和内容
+                logger.debug(f"组件类型: {type(component).__name__}")
+                logger.debug(f"组件内容: {component.__dict__}")
+
+                # 检查是否是图片组件
+                if isinstance(component, Comp.Image):
+                    # 使用url属性
+                    if hasattr(component, 'url') and component.url:
+                        logger.info(f"找到图片URL: {component.url}")
+                        image_urls.append(component.url)
+                    else:
+                        logger.debug(f"图片组件属性: {dir(component)}")
+            
+            logger.info(f"共找到 {len(image_urls)} 个图片URL")
+            return image_urls
+        except Exception as e:
+            logger.error(f"获取图片失败: {str(e)}")
+            return []
+
     async def _async_init(self):
         """异步初始化数据库和WebUI"""
         try:
@@ -243,9 +272,15 @@ class CodeExecutorPlugin(Star):
         5. **Image Processing**: e.g., "Download a cat image and resize it".
         6. **Complex Logic**: e.g., "Plan the shortest path" or "Simulate a lottery".
         7. **File Operations**: Allow AI to generate code in the proper format to operate local files and send to users, including but not limited to delete, search, modify, etc.
+        8. **Image Download and Processing**: When users send images in messages, you can download and process them using the `img_url` variable.
         **【File Handling Rules - MUST Strictly Follow】**
         1. **Create New File**: MUST save to `SAVE_DIR` directory, using `os.path.join(SAVE_DIR, 'filename')`
         2. **Send File**: MUST add the full file path to the `FILES_TO_SEND` list (this variable is global, do not define it in your code, use it directly). Once added to the list, the file will be automatically sent to the user, and the task is considered complete, no need to call this function repeatedly.
+
+        **【Image Processing Rules - MUST Strictly Follow】**
+        1. **Image URL Access**: Use the `img_url` variable (list type) to access image URLs from user messages. This variable is automatically populated with image URLs from the current message.
+        2. **Download Images**: Use requests or other libraries to download images from URLs in `img_url` list.
+        3. **Process Images**: After downloading, you can process images using PIL, cv2, or other image processing libraries.
 
         **Example**:
         ```python
@@ -255,6 +290,16 @@ class CodeExecutorPlugin(Star):
         
         # Send existing file (do not define FILES_TO_SEND in your code, use it directly)
         FILES_TO_SEND.append("D:/data/report.xlsx")  # Automatically sent after adding
+        
+        # Download and process images from user messages
+        if img_url:  # img_url is a list of image URLs from user messages
+            for i, url in enumerate(img_url):
+                response = requests.get(url, timeout=30)
+                image_path = os.path.join(SAVE_DIR, f'downloaded_image_{i}.jpg')
+                with open(image_path, 'wb') as f:
+                    f.write(response.content)
+                # Process the image...
+                FILES_TO_SEND.append(image_path)  # Send processed image
         ```
         - This function has full file system permissions and can read/write any accessible directory.
         **【Stop Conditions】**
@@ -262,6 +307,10 @@ class CodeExecutorPlugin(Star):
         - If there is no file or output, the function will explicitly return task completion information.
         **【Available Libraries】**
         Almost all common libraries are supported, feel free to write and execute code.
+        **【Available Variables】**
+        - `SAVE_DIR`: Directory for saving output files
+        - `FILES_TO_SEND`: List for files to be sent to user (global variable, do not define)
+        - `img_url`: List of image URLs from user messages (list type, automatically populated)
         **【Coding Requirements】**
         - File operations must check paths and exceptions.
         - Support operations on various drive letters.
@@ -283,8 +332,12 @@ class CodeExecutorPlugin(Star):
         sender_name = event.get_sender_name()
         start_time = time.time()
 
+        # 获取消息中的图片URL
+        img_urls = self.get_image_urls_from_message(event.message_obj.message)
+        logger.info(f"检测到 {len(img_urls)} 个图片URL: {img_urls}")
+
         try:
-            result = await self._execute_code_safely(code)
+            result = await self._execute_code_safely(code, img_urls)
             execution_time = time.time() - start_time
 
             if result["success"]:
@@ -452,8 +505,8 @@ class CodeExecutorPlugin(Star):
             # 返回详细的错误信息给LLM上下文
             return error_msg
 
-    async def _execute_code_safely(self, code: str) -> Dict[str, Any]:
-        def run_code(code_to_run: str, file_output_dir: str):
+    async def _execute_code_safely(self, code: str, img_urls: List[str] = None) -> Dict[str, Any]:
+        def run_code(code_to_run: str, file_output_dir: str, image_urls: List[str] = None):
             old_stdout, old_stderr = sys.stdout, sys.stderr
             output_buffer, error_buffer = io.StringIO(), io.StringIO()
 
@@ -468,6 +521,7 @@ class CodeExecutorPlugin(Star):
                     'print': print,
                     'SAVE_DIR': file_output_dir,
                     'FILES_TO_SEND': files_to_send_explicitly,
+                    'img_url': image_urls or [],  # 提供图片URL列表给代码使用
                     'io': io
                 }
 
@@ -627,7 +681,7 @@ class CodeExecutorPlugin(Star):
         # 使用 asyncio.to_thread 替代 threading + queue，避免阻塞事件循环
         try:
             result = await asyncio.wait_for(
-                asyncio.to_thread(run_code, code, self.file_output_dir),
+                asyncio.to_thread(run_code, code, self.file_output_dir, img_urls),
                 timeout=self.timeout_seconds
             )
             return result
