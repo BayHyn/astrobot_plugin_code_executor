@@ -352,9 +352,10 @@ class CodeExecutorPlugin(Star):
         2. **Send File**: MUST add the full file path to the `FILES_TO_SEND` list (this variable is global, do not define it in your code, use it directly). Once added to the list, the file will be automatically sent to the user, and the task is considered complete, no need to call this function repeatedly.
 
         **【Image Processing Rules - MUST Strictly Follow】**
-        1. **Image URL Access**: Use the `img_url` variable (list type) to access image URLs from user messages. This variable is automatically populated with image URLs from the current message.
+        1. **Image URL Access**: Use the `img_url` variable (list type) to access image URLs from user messages. This variable is automatically populated with image URLs from the current message and will be included in the execution context.
         2. **Download Images**: Use requests or other libraries to download images from URLs in `img_url` list.
         3. **Process Images**: After downloading, you can process images using PIL, cv2, or other image processing libraries.
+        4. **Context Preservation**: All image URLs from the current message are automatically preserved in the execution context and returned to the LLM for reference.
 
         **Example**:
         ```python
@@ -384,7 +385,7 @@ class CodeExecutorPlugin(Star):
         **【Available Variables】**
         - `SAVE_DIR`: Directory for saving output files
         - `FILES_TO_SEND`: List for files to be sent to user (global variable, do not define)
-        - `img_url`: List of image URLs from user messages (list type, automatically populated)
+        - `img_url`: List of image URLs from user messages (list type, automatically populated and preserved in execution context)
         **【Coding Requirements】**
         - File operations must check paths and exceptions.
         - Support operations on various drive letters.
@@ -427,6 +428,13 @@ class CodeExecutorPlugin(Star):
 
                 # 构建返回给LLM的详细信息
                 llm_context_parts = ["✅ 代码执行成功！任务已完全完成，无需再次执行。文件发送通过将路径添加到FILES_TO_SEND列表实现，一旦添加，文件将被自动处理和发送。"]
+                
+                # 添加图片URL信息到LLM上下文
+                if img_urls:
+                    img_context = f"📷 本次执行中可用的图片资源 ({len(img_urls)}个):\n"
+                    for i, url in enumerate(img_urls, 1):
+                        img_context += f"  {i}. {url}\n"
+                    llm_context_parts.append(img_context.rstrip())
                 
                 # 添加执行输出到LLM上下文
                 if result["output"] and result["output"].strip():
@@ -533,6 +541,14 @@ class CodeExecutorPlugin(Star):
                 if result.get("output"):
                     error_msg += f"\n\n出错前输出：\n```\n{result['output']}\n```"
                 error_msg += "\n💡 建议：请检查代码逻辑和语法，修正后可重新尝试执行。"
+                
+                # 添加图片URL信息到错误上下文
+                if img_urls:
+                    img_context = f"\n\n📷 本次执行中可用的图片资源 ({len(img_urls)}个):\n"
+                    for i, url in enumerate(img_urls, 1):
+                        img_context += f"  {i}. {url}\n"
+                    error_msg += img_context.rstrip()
+                
                 await event.send(MessageChain().message(error_msg))
                 
                 # 记录失败执行到数据库
@@ -558,6 +574,14 @@ class CodeExecutorPlugin(Star):
             logger.error(f"插件内部错误: {str(e)}", exc_info=True)
             execution_time = time.time() - start_time
             error_msg = f"🔥 插件内部错误：{str(e)}\n💡 建议：请检查插件配置或环境设置。"
+            
+            # 添加图片URL信息到插件错误上下文
+            if img_urls:
+                img_context = f"\n\n📷 本次执行中可用的图片资源 ({len(img_urls)}个):\n"
+                for i, url in enumerate(img_urls, 1):
+                    img_context += f"  {i}. {url}\n"
+                error_msg += img_context.rstrip()
+            
             await event.send(MessageChain().message(error_msg))
             
             # 记录插件内部错误到数据库
