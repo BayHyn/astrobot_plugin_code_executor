@@ -94,19 +94,27 @@ pip install fastapi uvicorn[standard] jinja2 aiosqlite
   "max_output_length": 3000,
   "enable_plots": true,
   "output_directory": "D:/ai_outputs",
+  "enable_webui": false,
   "webui_port": 22334,
   "enable_lagrange_adapter": false,
-  "lagrange_api_port": 8083
+  "lagrange_api_port": 8083,
+  "enable_local_route_sending": false,
+  "lagrange_host": "127.0.0.1",
+  "local_route_host": "localhost"
 }
 ```
 
 - `timeout_seconds`：代码执行超时时间（秒）
 - `max_output_length`：输出结果最大长度
 - `enable_plots`：是否启用图表生成
-- `output_directory`：默认工作目录
+- `output_directory`：默认工作目录（留空则使用插件内置路径，Docker用户可尝试填写 /Astrbot/data 或 /data）
+- `enable_webui`：是否启用WebUI服务（默认关闭，避免端口冲突）
 - `webui_port`：WebUI服务端口（可自定义，避免端口冲突）
 - `enable_lagrange_adapter`：启用Lagrange适配器（默认关闭）
 - `lagrange_api_port`：Lagrange API服务端口（默认8083）
+- `enable_local_route_sending`：启用本地路由发送（默认关闭，适用于AstrBot和发送框架不在同一网络的情况）
+- `lagrange_host`：Lagrange服务器IP地址（默认127.0.0.1，如果AstrBot和Lagrange不在同一主机请填写Lagrange的IP地址）
+- `local_route_host`：本地路由发送主机IP地址（默认localhost，如需支持Docker或跨网络访问，请填写局域网IP地址）
 
 **部分行为可通过源码 `__init__` 方法调整。**
 
