@@ -341,7 +341,7 @@ class CodeExecutorPlugin(Star):
         **MUST** call this function in the following scenarios to execute code for precise results, prohibit guessing with text:
         1. **Calculations/Data Processing**: e.g., "Calculate (1+5)*3/2" or "Analyze the maximum value in data".
         2. **File Operations**: Generate/read Excel, PDF, CSV, images, etc., e.g., "Generate an Excel table".
-        3. **Network Requests**: Request various APIs or other network operations.
+        3. **API Calls/Interface Requests**: Only when explicitly requested to call specific APIs or interfaces, e.g., "Call the weather API" or "Request data from REST interface".
         4. **Data Visualization**: e.g., "Draw a sales trend chart" or "Generate a pie chart".
         5. **Image Processing**: e.g., "Download a cat image and resize it".
         6. **Complex Logic**: e.g., "Plan the shortest path" or "Simulate a lottery".
