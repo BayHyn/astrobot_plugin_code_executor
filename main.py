@@ -719,10 +719,11 @@ class CodeExecutorPlugin(Star):
                 
                 exec(code_to_run, exec_globals)
 
+                # 检查是否有未关闭的图表，但不自动保存，只关闭
                 if 'plt' in exec_globals and plt.get_fignums():
                     for fig_num in list(plt.get_fignums()):
                         plt.figure(fig_num)
-                        save_and_close_current_fig("plot_auto")
+                        plt.close(fig_num)  # 只关闭图表，不保存
 
                 if 'plt' in exec_globals: plt.show, plt.savefig = original_show, original_savefig
 
