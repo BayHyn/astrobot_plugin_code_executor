@@ -1,6 +1,6 @@
 # AstrBot代码执行器插件 (Super Code Executor) - 全能小狐狸汐林
 
-![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg) ![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg) ![Plugin Version](https://img.shields.io/badge/version-2.3.0-brightgreen) ![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg) ![Python Version](https://img.shields.io/badge/python-3.10%2B-orange.svg) ![Plugin Version](https://img.shields.io/badge/version-2.4.0-brightgreen) ![Framework](https://img.shields.io/badge/framework-AstrBot-D72C4D)
 
 ⚠️⚠️⚠️ **安全警告** ⚠️⚠️⚠️
 
@@ -65,6 +65,11 @@
 - **分页浏览**：智能分页与页码导航。
 
 ---
+
+
+# 建议辅助安装的插件：
+- [AstrBot文本转图片插件](https://github.com/luosheng520qaq/astrbot_plugin_nobrowser_markdown_to_pic)
+- [AstrBot消息合并插件](https://github.com/FreeDivers/astrbot_plugin_combine-messages) *（为代码执行器添加文件事件支持）*
 
 # 🚀 安装与启动
 
@@ -290,6 +295,12 @@ CREATE TABLE execution_history (
 **更新日期**: 2025年8月3日
 
 ## 更新日志
+
+### v2.4.0 - 代码执行错误处理增强
+- 新增错误分析与修复建议功能
+- 支持根据错误信息自动生成修复代码
+- 新增配置项：`enable_error_analysis` 用于开启/关闭错误分析功能
+
 
 ### v2.3.0 - 图片处理功能增强 (2025-08-03)
 - 🖼️ **新增图片处理功能**：自动提取消息中的图片URL并注入到执行环境

@@ -64,6 +64,24 @@
       "type": "string",
       "default": "localhost",
       "hint": "本地路由发送时使用的主机IP地址，默认为localhost。如需支持Docker或跨网络访问，请填写局域网IP地址（如192.168.1.100）"
+    },
+    "enable_error_analysis": {
+      "description": "启用错误代码分析",
+      "type": "bool",
+      "default": false,
+      "hint": "启用后，当代码执行失败时会调用辅助模型分析错误并提供修复建议"
+    },
+    "error_analysis_provider_id": {
+      "description": "错误分析辅助模型提供商ID",
+      "type": "string",
+      "default": "",
+      "hint": "用于错误分析的LLM提供商ID，留空则使用当前默认提供商。建议使用快速响应的模型如GPT-3.5或Claude Haiku"
+    },
+    "error_analysis_model": {
+      "description": "错误分析使用的模型名称",
+      "type": "string",
+      "default": "",
+      "hint": "指定用于错误分析的具体模型名称，留空则使用提供商的默认模型"
     }
   }
   

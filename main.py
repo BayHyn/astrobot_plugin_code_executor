@@ -21,7 +21,7 @@ from .database import ExecutionHistoryDB
 from .webui import CodeExecutorWebUI
 
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.3--img")
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.4")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -38,6 +38,11 @@ class CodeExecutorPlugin(Star):
         self.enable_local_route_sending = self.config.get("enable_local_route_sending", False)
         self.lagrange_host = self.config.get("lagrange_host", "127.0.0.1")
         self.local_route_host = self.config.get("local_route_host", "localhost")
+        
+        # 错误分析相关配置
+        self.enable_error_analysis = self.config.get("enable_error_analysis", False)
+        self.error_analysis_provider_id = self.config.get("error_analysis_provider_id", "")
+        self.error_analysis_model = self.config.get("error_analysis_model", "")
 
         # **[新功能]** 从配置文件读取输出目录
         configured_path = self.config.get("output_directory")
@@ -380,6 +385,10 @@ class CodeExecutorPlugin(Star):
         **【Stop Conditions】**
         - Once the code executes successfully, files are generated and added to FILES_TO_SEND (if needed), or output is produced, the task is complete. No need to call this function repeatedly to continue the same task.
         - If there is no file or output, the function will explicitly return task completion information.
+        **【Error Handling and Retry】**
+        - If code execution fails, the system will provide AI-powered error analysis and fix suggestions.
+        - **IMPORTANT**: When you receive error analysis feedback, you MUST generate corrected code based on the analysis and retry execution immediately. Do not stop after seeing the error - use the analysis to fix and retry.
+        - The error analysis will include specific fix suggestions and corrected code snippets to guide your retry attempt.
         **【Available Libraries】**
         Almost all common libraries are supported, feel free to write and execute code.
         **【Available Variables】**
@@ -549,6 +558,11 @@ class CodeExecutorPlugin(Star):
                         img_context += f"  {i}. {url}\n"
                     error_msg += img_context.rstrip()
                 
+                # 调用辅助模型进行错误分析
+                error_analysis = await self._analyze_error_with_auxiliary_model(code, result["error"], event)
+                if error_analysis:
+                    error_msg += error_analysis
+                
                 await event.send(MessageChain().message(error_msg))
                 
                 # 记录失败执行到数据库
@@ -567,7 +581,7 @@ class CodeExecutorPlugin(Star):
                 except Exception as db_error:
                     logger.error(f"记录执行历史失败: {db_error}", exc_info=True)
                 
-                # 返回详细的错误信息给LLM上下文
+                # 返回详细的错误信息给LLM上下文（包含错误分析）
                 return error_msg
 
         except Exception as e:
@@ -812,3 +826,64 @@ class CodeExecutorPlugin(Star):
             
         except Exception as e:
             logger.error(f"插件卸载过程中发生错误: {e}")
+
+    async def _analyze_error_with_auxiliary_model(self, failed_code: str, error_message: str, event: AstrMessageEvent) -> str:
+        """使用辅助模型分析错误代码并提供修复建议"""
+        try:
+            # 如果未启用错误分析功能，直接返回空字符串
+            if not self.enable_error_analysis:
+                return ""
+            
+            # 获取LLM提供商
+            if self.error_analysis_provider_id:
+                # 使用指定的提供商ID
+                provider = self.context.get_provider_by_id(self.error_analysis_provider_id)
+            else:
+                # 使用当前默认提供商
+                provider = self.context.get_using_provider(umo=event.unified_msg_origin)
+            
+            if not provider:
+                logger.warning("无法获取LLM提供商，跳过错误分析")
+                return ""
+            
+            # 构建分析提示
+            analysis_prompt = f"""请分析以下Python代码的错误并提供修复建议：
+
+**错误代码：**
+```python
+{failed_code}
+```
+
+**错误信息：**
+{error_message}
+
+请提供：
+1. 错误原因的简要分析
+2. 具体的修复建议
+3. 如果可能，提供修正后的代码片段
+
+请保持回复简洁明了，重点关注实际的解决方案。"""
+
+            # 调用辅助模型
+            llm_kwargs = {
+                "prompt": analysis_prompt,
+                "system_prompt": "你是一个Python代码错误分析专家，专门帮助用户理解和修复代码错误。请提供准确、实用的修复建议。\n\n重要概念说明：\n- SAVE_DIR: 用于保存输出文件的目录变量\n- FILES_TO_SEND: 用于指定需要发送给用户的文件列表（全局变量，直接使用无需定义）\n\n在分析代码时，请特别注意这两个变量的正确使用方式。"
+            }
+            
+            # 如果指定了模型名称，添加到参数中
+            if self.error_analysis_model:
+                llm_kwargs["model"] = self.error_analysis_model
+            
+            llm_response = await provider.text_chat(**llm_kwargs)
+            
+            if llm_response and llm_response.completion_text:
+                analysis_result = llm_response.completion_text.strip()
+                logger.info("错误分析完成")
+                return f"\n\n🤖 **AI错误分析与修复建议：**\n{analysis_result}\n\n💡 **请参考上述分析重新生成修正后的代码并再次执行。**"
+            else:
+                logger.warning("辅助模型返回空结果")
+                return ""
+                
+        except Exception as e:
+            logger.error(f"错误分析过程中发生异常: {e}", exc_info=True)
+            return ""
