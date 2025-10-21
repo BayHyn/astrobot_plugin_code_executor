@@ -646,7 +646,7 @@ class CodeExecutorPlugin(Star):
                     
                     # 智能检测和配置中文字体
                     def setup_chinese_fonts():
-                        """智能检测并配置中文字体，支持多平台"""
+                        """智能检测并配置中文字体，支持多平台，并强制设置默认字体族"""
                         system = platform.system().lower()
                         available_fonts = [f.name for f in fm.fontManager.ttflist]
                         
@@ -670,36 +670,68 @@ class CodeExecutorPlugin(Star):
                         # 获取当前系统的字体列表
                         system_fonts = chinese_fonts.get(system, chinese_fonts['windows'])
                         
-                        # 查找可用的中文字体
-                        found_fonts = []
-                        for font in system_fonts:
-                            if font in available_fonts:
-                                found_fonts.append(font)
-                                logger.debug(f"找到可用中文字体: {font}")
+                        found_fonts, found_paths = [], []
                         
-                        # 如果没找到预定义的中文字体，尝试搜索包含中文字符的字体
+                        # 先按优先级尝试 findfont，确保拿到路径并注册
+                        for font in system_fonts:
+                            try:
+                                path = fm.findfont(font, fallback_to_default=False)
+                                if path and os.path.exists(path):
+                                    try:
+                                        fm.fontManager.addfont(path)
+                                    except Exception:
+                                        pass
+                                    family = fm.FontProperties(fname=path).get_name()
+                                    found_fonts.append(family)
+                                    found_paths.append(path)
+                                    logger.debug(f"找到可用中文字体: {family} ({path})")
+                            except Exception:
+                                continue
+                        
+                        # 如果没找到，尝试常见候选与名称关键词
                         if not found_fonts:
                             logger.warning("未找到预定义的中文字体，尝试搜索其他中文字体...")
-                            chinese_keywords = ['Chinese', 'CJK', 'Han', 'Hei', 'Song', 'Kai', 'Ming']
-                            for font in available_fonts:
-                                if any(keyword in font for keyword in chinese_keywords):
-                                    found_fonts.append(font)
-                                    logger.debug(f"找到候选中文字体: {font}")
-                                    if len(found_fonts) >= 3:  # 限制数量避免过多
-                                        break
+                            fallback_candidates = [
+                                'Microsoft YaHei', 'SimHei', 'SimSun', 'Noto Sans CJK SC',
+                                'Source Han Sans SC', 'PingFang SC'
+                            ]
+                            for font in fallback_candidates + available_fonts:
+                                try:
+                                    path = fm.findfont(font, fallback_to_default=False)
+                                    if path and os.path.exists(path):
+                                        try:
+                                            fm.fontManager.addfont(path)
+                                        except Exception:
+                                            pass
+                                        family = fm.FontProperties(fname=path).get_name()
+                                        # 避免重复
+                                        if family not in found_fonts:
+                                            found_fonts.append(family)
+                                            found_paths.append(path)
+                                            logger.debug(f"找到候选中文字体: {family} ({path})")
+                                            if len(found_fonts) >= 3:
+                                                break
+                                except Exception:
+                                    continue
                         
                         # 构建字体列表（中文字体 + 英文回退字体）
                         font_list = found_fonts + ['DejaVu Sans', 'Arial', 'Liberation Sans', 'sans-serif']
+                        primary_font = found_fonts[0] if found_fonts else 'DejaVu Sans'
                         
                         if found_fonts:
-                            logger.info(f"配置中文字体成功，使用字体: {found_fonts[0]} (共找到 {len(found_fonts)} 个中文字体)")
+                            logger.info(f"配置中文字体成功，使用字体: {primary_font} (共找到 {len(found_fonts)} 个中文字体)")
+                            try:
+                                logger.debug(f"主字体路径: {found_paths[0]}")
+                            except Exception:
+                                pass
                         else:
                             logger.warning("未找到任何中文字体，将使用系统默认字体，中文可能显示为方框")
                         
-                        return font_list
+                        return font_list, primary_font
                     
                     # 应用字体配置
-                    font_list = setup_chinese_fonts()
+                    font_list, primary_font = setup_chinese_fonts()
+                    plt.rcParams['font.family'] = [primary_font, 'sans-serif']
                     plt.rcParams['font.sans-serif'] = font_list
                     plt.rcParams['axes.unicode_minus'] = False
                     
@@ -720,6 +752,10 @@ class CodeExecutorPlugin(Star):
                         try:
                             original_savefig(filepath, dpi=150, bbox_inches='tight')
                             print(f"[图表已保存: {filepath}]")
+                            try:
+                                files_to_send_explicitly.append(filepath)
+                            except Exception:
+                                pass
                         except Exception as e:
                             print(f"[保存图表失败: {e}]")
                         finally:
@@ -808,6 +844,11 @@ class CodeExecutorPlugin(Star):
                 if 'plt' in exec_globals: plt.show, plt.savefig = original_show, original_savefig
 
                 # 优先使用 FILES_TO_SEND 列表，提高文件归属准确性
+                # 过滤掉不存在的显式路径，避免重复和日志噪音
+                files_to_send_explicitly = [
+                    p for p in files_to_send_explicitly
+                    if isinstance(p, str) and os.path.exists(p) and os.path.isfile(p)
+                ]
                 if files_to_send_explicitly:
                     # 如果用户显式添加了文件到 FILES_TO_SEND，优先使用这些文件
                     all_files_to_send = files_to_send_explicitly[:]
