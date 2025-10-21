@@ -21,7 +21,7 @@ from .database import ExecutionHistoryDB
 from .webui import CodeExecutorWebUI
 
 
-@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.4")
+@register("code_executor", "Xican", "代码执行器 - 全能小狐狸汐林", "2.2.5")
 class CodeExecutorPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -641,8 +641,74 @@ class CodeExecutorPlugin(Star):
                     import matplotlib
                     matplotlib.use('Agg')
                     import matplotlib.pyplot as plt
-                    plt.rcParams['font.sans-serif'] = ['SimHei', 'DejaVu Sans', 'Arial']
+                    import matplotlib.font_manager as fm
+                    import platform
+                    
+                    # 智能检测和配置中文字体
+                    def setup_chinese_fonts():
+                        """智能检测并配置中文字体，支持多平台"""
+                        system = platform.system().lower()
+                        available_fonts = [f.name for f in fm.fontManager.ttflist]
+                        
+                        # 定义不同平台的中文字体优先级列表
+                        chinese_fonts = {
+                            'windows': [
+                                'Microsoft YaHei', 'SimHei', 'SimSun', 'KaiTi', 'FangSong',
+                                'Microsoft JhengHei', 'DFKai-SB', 'MingLiU'
+                            ],
+                            'darwin': [  # macOS
+                                'PingFang SC', 'Hiragino Sans GB', 'STHeiti', 'STSong',
+                                'STKaiti', 'STFangsong', 'Songti SC', 'Kaiti SC'
+                            ],
+                            'linux': [
+                                'Noto Sans CJK SC', 'Noto Serif CJK SC', 'Source Han Sans SC',
+                                'Source Han Serif SC', 'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei',
+                                'AR PL UMing CN', 'AR PL UKai CN', 'SimHei', 'SimSun'
+                            ]
+                        }
+                        
+                        # 获取当前系统的字体列表
+                        system_fonts = chinese_fonts.get(system, chinese_fonts['windows'])
+                        
+                        # 查找可用的中文字体
+                        found_fonts = []
+                        for font in system_fonts:
+                            if font in available_fonts:
+                                found_fonts.append(font)
+                                logger.debug(f"找到可用中文字体: {font}")
+                        
+                        # 如果没找到预定义的中文字体，尝试搜索包含中文字符的字体
+                        if not found_fonts:
+                            logger.warning("未找到预定义的中文字体，尝试搜索其他中文字体...")
+                            chinese_keywords = ['Chinese', 'CJK', 'Han', 'Hei', 'Song', 'Kai', 'Ming']
+                            for font in available_fonts:
+                                if any(keyword in font for keyword in chinese_keywords):
+                                    found_fonts.append(font)
+                                    logger.debug(f"找到候选中文字体: {font}")
+                                    if len(found_fonts) >= 3:  # 限制数量避免过多
+                                        break
+                        
+                        # 构建字体列表（中文字体 + 英文回退字体）
+                        font_list = found_fonts + ['DejaVu Sans', 'Arial', 'Liberation Sans', 'sans-serif']
+                        
+                        if found_fonts:
+                            logger.info(f"配置中文字体成功，使用字体: {found_fonts[0]} (共找到 {len(found_fonts)} 个中文字体)")
+                        else:
+                            logger.warning("未找到任何中文字体，将使用系统默认字体，中文可能显示为方框")
+                        
+                        return font_list
+                    
+                    # 应用字体配置
+                    font_list = setup_chinese_fonts()
+                    plt.rcParams['font.sans-serif'] = font_list
                     plt.rcParams['axes.unicode_minus'] = False
+                    
+                    # 设置字体缓存刷新（确保字体配置生效）
+                    try:
+                        fm._rebuild()
+                    except:
+                        pass  # 某些版本的matplotlib可能没有这个方法
+                    
                     original_show, original_savefig = plt.show, plt.savefig
 
                     def save_and_close_current_fig(base_name: str):
